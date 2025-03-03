@@ -1,9 +1,11 @@
 Python script to generate a Gaussian Process using a Markov Chain Monte Carlo for length scale optimisation from a novel loss function. 
 
 
-================================
+================================ \n
 File Formatting Assumption:
-For a n-dimensional problem, there should be n+2 columns in the input file.
+For an n-dimensional problem, there should be n+2 columns in the input file.
 - First n columns are the input kinematic variables
 - n+1 column is the physics quantity of interest
 - n+2 column is the associated error of the physics quantity
+
+It is also assumed that for an n-dimensional problem, the resolution list in options.yaml should contain n floats/integers. 
