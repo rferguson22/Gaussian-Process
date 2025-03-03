@@ -4,7 +4,9 @@ from scipy.spatial.distance import cdist
 
 def GP(xy_known, z_known, e_known,xy,lengths):
 
-    #Perform GP regression to find a predicted mean and uncertainty for unknown datapoints
+    '''
+    Perform GP regression to find a predicted mean and uncertainty for unknown datapoints
+    '''
 
     K = kernel_func(xy_known, xy_known,lengths) + e_known**2 * np.eye(len(e_known))
     K_s = kernel_func(xy_known,xy,lengths)
@@ -21,8 +23,10 @@ def GP(xy_known, z_known, e_known,xy,lengths):
 
 def kernel_func(xy1,xy2,l):
 
-    #Calculates the RBF kernel between 2 sets of points with given length scales for each dimension
-
+    '''
+    Calculates the RBF kernel between 2 sets of points with given length scales for each dimension
+    '''
+    
     sq_norm=np.zeros((xy1.shape[1],xy2.shape[1]))
 
     for i in range(xy1.shape[0]):
