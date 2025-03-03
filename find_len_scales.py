@@ -64,7 +64,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,plot):
     max_n=2000*ndim
 
     r_hat_tol=1.18
-    tau_tol=0.18
+    tau_tol=0.15
     
     endpoints=[]
     for i in range(len(x_known_temp)):

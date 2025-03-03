@@ -7,3 +7,4 @@ corner
 scikit-learn
 matplotlib
 scipy
+yaml

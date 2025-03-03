@@ -1,16 +1,21 @@
 import numpy as np
 import pandas as pd
+import yaml
 from find_len_scales import len_scale_opt
 from convex_hull import fill_convex_hull
 from GP_func import GP,kernel_func
 
 def create_GP():
     
-    observable="Sigma"
-    resolution=[0.01,0.01]
+    with open("options.yaml","r") as file:
+        data=yaml.safe_load(file)
+
+
+    file_path=data["file_name"]
+    resolution=data["resolution"]
     plot=False
 
-    xy_known,z_known,e_known=read_data(observable)
+    xy_known,z_known,e_known=read_data(file_path)
 
     len_scale=len_scale_opt(xy_known,z_known,e_known,plot)
     
@@ -24,15 +29,13 @@ def create_GP():
 
 ##############################################################################
 
-def read_data(observable):
+def read_data(file_path):
 
-    df = pd.read_csv("g8K0SigResults.txt",sep=',', header=0)
+    data = pd.read_csv(file_path,sep=',', header=0)
 
-    data=df.loc[df["obs"]==observable]
-
-    xy_known=data[["Egamma","CosThetaK0"]].to_numpy().T
-    z_known=data[["value"]].to_numpy().T[0]
-    e_known=data[["std"]].to_numpy().T[0]
+    xy_known=data.iloc[:,:-2].to_numpy().T
+    z_known=data.iloc[:,-2].to_numpy().T
+    e_known=data.iloc[:,-1].to_numpy().T
     
     return xy_known,z_known,e_known 
 
