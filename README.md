@@ -14,3 +14,4 @@ It is also assumed that for an n-dimensional problem, the resolution list in opt
 Optional parameters in options.yaml: <br>
 - plot: Boolean. Whether to display the MCMC progress and related plotting. By default is False. 
 - out_file_name: String. File path and filename of ouput GP results. By default is in the same folder as the input file and called "GP_results.txt".   
+- labels: labels for the column of the output file. By default uses the same labels as the input file if they exist, otherwise uses generic labels dim0, dim1, ..., quantity, error. 

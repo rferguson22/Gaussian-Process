@@ -8,9 +8,9 @@ from GP_func import GP,kernel_func
 
 def create_GP():
 
-    file_path,resolution,plot,out_file_name=read_yaml()
+    file_path,resolution,plot,out_file_name,labels=read_yaml()
     
-    xy_known,z_known,e_known,labels=read_data(file_path)
+    xy_known,z_known,e_known,labels=read_data(file_path,labels)
 
     if len(resolution)!=len(xy_known):
         issue="Reading in the data at "+file_path+" showed a "+str(len(xy_known))+\
@@ -32,6 +32,10 @@ def create_GP():
 
 def generate_labels(num_columns):
 
+    '''
+    Generates default labels for the GP_output file. 
+    '''
+
     labels= [f'dim{i+1}' for i in range(num_columns-2)]
 
     labels.extend(['quantity', 'error'])
@@ -41,6 +45,10 @@ def generate_labels(num_columns):
 ##############################################################################
 
 def read_csv(file_path):
+
+    '''
+    Reads in csv file, checking if there a header.
+    '''
     
     df_no_header = pd.read_csv(file_path, header=None)
     
@@ -51,24 +59,31 @@ def read_csv(file_path):
     else:
         labels=generate_labels(len(df_no_header.columns))
         df = pd.read_csv(file_path, names=labels)
-
     
     return df
 
 ##############################################################################
 
-def read_data(file_path):
+def read_data(file_path,labels):
 
+    '''
+    Reads in known datapoints.
+    '''
 
     data = read_csv(file_path)
 
-    print(data)
+    if labels is None:
+        labels=data.columns
+
+    if len(labels)!=len(data.columns):
+        issue="Expected "+str(len(data.columns))+ " column names in labels but received "+str(len(labels))
+        raise ValueError(issue)
 
     xy_known=data.iloc[:,:-2].to_numpy().T
     z_known=data.iloc[:,-2].to_numpy().T
     e_known=data.iloc[:,-1].to_numpy().T
     
-    return xy_known,z_known,e_known,data.columns
+    return xy_known,z_known,e_known,labels
 
 ##############################################################################
 
@@ -82,6 +97,7 @@ def read_yaml():
     resolution=options["resolution"]
     plot=options["plot"]
     out_file_name=options["out_file_name"]
+    labels=options["labels"]
 
 
     file_path_check = Path(file_path)
@@ -101,7 +117,7 @@ def read_yaml():
         folder_path = original_file_path.parent
         out_file_name = folder_path / 'GP_results'
 
-    return file_path,resolution,plot,out_file_name
+    return file_path,resolution,plot,out_file_name,labels
 
 ##############################################################################
 
