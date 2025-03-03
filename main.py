@@ -10,7 +10,7 @@ def create_GP():
 
     file_path,resolution,plot,out_file_name=read_yaml()
     
-    xy_known,z_known,e_known=read_data(file_path)
+    xy_known,z_known,e_known,labels=read_data(file_path)
 
     if len(resolution)!=len(xy_known):
         issue="Reading in the data at "+file_path+" showed a "+str(len(xy_known))+\
@@ -30,15 +30,45 @@ def create_GP():
 
 ##############################################################################
 
+def generate_labels(num_columns):
+
+    labels= [f'dim{i+1}' for i in range(num_columns-2)]
+
+    labels.extend(['quantity', 'error'])
+
+    return labels
+
+##############################################################################
+
+def read_csv(file_path):
+    
+    df_no_header = pd.read_csv(file_path, header=None)
+    
+    first_row = df_no_header.iloc[0]
+    
+    if all(isinstance(val, str) for val in first_row):  
+        df = pd.read_csv(file_path) 
+    else:
+        labels=generate_labels(len(df_no_header.columns))
+        df = pd.read_csv(file_path, names=labels)
+
+    
+    return df
+
+##############################################################################
+
 def read_data(file_path):
 
-    data = pd.read_csv(file_path,sep=',', header=0)
+
+    data = read_csv(file_path)
+
+    print(data)
 
     xy_known=data.iloc[:,:-2].to_numpy().T
     z_known=data.iloc[:,-2].to_numpy().T
     e_known=data.iloc[:,-1].to_numpy().T
     
-    return xy_known,z_known,e_known 
+    return xy_known,z_known,e_known,data.columns
 
 ##############################################################################
 
