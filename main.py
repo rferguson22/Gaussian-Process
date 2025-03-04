@@ -12,6 +12,7 @@ def create_GP():
     
     xy_known,z_known,e_known,labels=read_data(file_path,labels)
 
+    
     if len(resolution)!=len(xy_known):
         issue="Reading in the data at "+file_path+" showed a "+str(len(xy_known))+\
             "D problem but there are "+str(len(resolution))+\
@@ -23,6 +24,8 @@ def create_GP():
     xy=fill_convex_hull(xy_known.T,resolution)
     
     y_fit,e_fit=GP(xy_known,z_known,e_known,xy.T,len_scale)
+
+    output_GP(xy,y_fit,e_fit,out_file_name,labels)
 
     print("Success")
 
@@ -124,6 +127,22 @@ def read_yaml():
     return file_path,resolution,MC_progress,MC_plotting,out_file_name,labels
 
 ##############################################################################
+
+def output_GP(xy,y_fit,e_fit,out_file_name,labels):
+
+    '''
+    Outputs the GP fits
+    '''
+
+    data=np.vstack([xy.T,y_fit.T,e_fit.T])
+
+    df=pd.DataFrame(data.T,columns=labels)
+
+    df.to_csv(out_file_name,index=False)
+
+    return
+
+################################################################################
 
 create_GP()
 
