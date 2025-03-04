@@ -1,12 +1,14 @@
 import numpy as np
 from numpy.linalg import inv
 
+from smt.sampling_methods import LHS
 import emcee
 import multiprocessing
 import corner
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 from scipy.spatial.distance import cdist
 from scipy.stats import gaussian_kde
@@ -123,7 +125,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
     if MC_plotting:
     
         fig=corner.corner(samples,labels=labels[:-2])
-        fig.savefig(plotting_path+"/corner_plot.png")
+        fig.savefig(plotting_path+"/GP_corner_plot.png")
     
         plt.figure(figsize=(8,6))
         plt.plot(x,density,label="KDE")
@@ -131,7 +133,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
         plt.xlabel("Dim 1")
         plt.ylabel("Density")
         plt.legend()
-        plt.savefig(plotting_path+"/KDE_plots.png")
+        plt.savefig(plotting_path+"/GP_KDE_plots.png")
         plt.show()
 
     if num_peaks>1:
@@ -153,7 +155,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
             plt.ylabel("Silhouette Score")
             plt.title("Silhouette Score for Optimal K")
             plt.grid(True)
-            plt.savefig(plotting_path+"/silhouette_scores.png")
+            plt.savefig(plotting_path+"/GP_silhouette_scores.png")
             plt.show()
 
         optimal_K=K_values[np.argmax(silhouette_scores)]
