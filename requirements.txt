@@ -1,6 +1,5 @@
 numpy
 pandas
-smt
 emcee
 multiprocessing
 corner

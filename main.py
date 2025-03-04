@@ -18,7 +18,7 @@ def create_GP():
             " resolution values listed. Please check how many dimensions your problem is."
         raise ValueError(issue)
 
-    len_scale=len_scale_opt(xy_known,z_known,e_known,MC_progress,MC_plotting,labels)
+    len_scale=len_scale_opt(xy_known,z_known,e_known,MC_progress,MC_plotting,labels,out_file_name)
     
     xy=fill_convex_hull(xy_known.T,resolution)
     
@@ -119,7 +119,7 @@ def read_yaml():
     if out_file_name is None:
         original_file_path = Path(file_path)
         folder_path = original_file_path.parent
-        out_file_name = folder_path / 'GP_results'
+        out_file_name = folder_path / 'GP_results.txt'
 
     return file_path,resolution,MC_progress,MC_plotting,out_file_name,labels
 
