@@ -3,6 +3,6 @@ file_name: "Test_file.txt"
 resolution: [0.01,0.01]
 
 #Optional
-plot: null
+MC_progress: null
 out_file_name: null
 labels: null
