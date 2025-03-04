@@ -1,7 +1,6 @@
 import numpy as np
 from numpy.linalg import inv
 
-from smt.sampling_methods import LHS
 import emcee
 import multiprocessing
 import corner
@@ -53,11 +52,13 @@ def sigma_to_percent(x):
 
 ##############################################################################################
 
-def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting,labels):  
+def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting,labels,out_file_name):  
 
     '''
     Finds the optimal length scale based on the given loss function. 
     '''
+    original_file_path = Path(out_file_name)
+    plotting_path = original_file_path.parent
 
     ndim=len(x_known_temp)
     nwalkers=10*ndim
@@ -122,6 +123,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
     if MC_plotting:
     
         fig=corner.corner(samples,labels=labels[:-2])
+        fig.savefig(plotting_path+"/corner_plot.png")
     
         plt.figure(figsize=(8,6))
         plt.plot(x,density,label="KDE")
@@ -129,6 +131,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
         plt.xlabel("Dim 1")
         plt.ylabel("Density")
         plt.legend()
+        plt.savefig(plotting_path+"/KDE_plots.png")
         plt.show()
 
     if num_peaks>1:
@@ -150,6 +153,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
             plt.ylabel("Silhouette Score")
             plt.title("Silhouette Score for Optimal K")
             plt.grid(True)
+            plt.savefig(plotting_path+"/silhouette_scores.png")
             plt.show()
 
         optimal_K=K_values[np.argmax(silhouette_scores)]
