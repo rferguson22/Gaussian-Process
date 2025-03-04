@@ -53,7 +53,7 @@ def sigma_to_percent(x):
 
 ##############################################################################################
 
-def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,plot):  
+def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,labels):  
 
     '''
     Finds the optimal length scale based on the given loss function. 
@@ -88,7 +88,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,plot):
         
         old_tau=np.inf
         sampler = emcee.EnsembleSampler(nwalkers,ndim,sigma_check,args=(x_known_temp,y_known_temp,e_known_temp),backend=backend,pool=pool)
-        for sample in sampler.sample(initial_positions,iterations=max_n,progress=plot):
+        for sample in sampler.sample(initial_positions,iterations=max_n,progress=MC_progress):
             if sampler.iteration%100:
                 continue
         
@@ -97,14 +97,14 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,plot):
             index+=1
             
             tau_conv=np.all((np.abs(old_tau-tau)/tau)<tau_tol)
-            if plot:
+            if MC_progress:
                 print(np.abs(old_tau-tau)/tau)
 
             chains=sampler.get_chain(discard=50,thin=5,flat=False)
             if chains.shape[1]>1:
                 r_hat=calc_r_hat(chains)
                 r_hat_conv=np.all(r_hat<r_hat_tol)
-                if plot:
+                if MC_progress:
                     print(r_hat)
             
             if r_hat_conv and tau_conv:
@@ -119,11 +119,9 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,plot):
 
     print("MCMC converged. Checking for multimodal surface")
 
-    if plot:
-        labels=["L1","L2"]
+    if MC_progress:
     
-        fig=corner.corner(samples,labels=labels)
-        fig.savefig("corner_plot.png")
+        fig=corner.corner(samples,labels=labels[:-2])
     
         plt.figure(figsize=(8,6))
         plt.plot(x,density,label="KDE")
@@ -145,7 +143,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,plot):
             score=silhouette_score(samples,cluster_labels)
             silhouette_scores.append(score)
 
-        if plot:
+        if MC_progress:
             plt.figure(figsize=(8,6))
             plt.plot(K_values,silhouette_scores,"-o",color="blue")
             plt.xlabel("Number of Clusters (K)")
