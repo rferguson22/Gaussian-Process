@@ -53,7 +53,7 @@ def sigma_to_percent(x):
 
 ##############################################################################################
 
-def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,labels):  
+def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting,labels):  
 
     '''
     Finds the optimal length scale based on the given loss function. 
@@ -119,7 +119,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,labels):
 
     print("MCMC converged. Checking for multimodal surface")
 
-    if MC_progress:
+    if MC_plotting:
     
         fig=corner.corner(samples,labels=labels[:-2])
     
@@ -143,7 +143,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,labels):
             score=silhouette_score(samples,cluster_labels)
             silhouette_scores.append(score)
 
-        if MC_progress:
+        if MC_plotting:
             plt.figure(figsize=(8,6))
             plt.plot(K_values,silhouette_scores,"-o",color="blue")
             plt.xlabel("Number of Clusters (K)")

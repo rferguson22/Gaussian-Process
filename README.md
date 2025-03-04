@@ -13,5 +13,6 @@ It is also assumed that for an n-dimensional problem, the resolution list in opt
 ================================ <br>
 Optional parameters in options.yaml: <br>
 - MC_progress: Boolean. Whether to display the MCMC progress and related plotting. By default is False. 
-- out_file_name: String. File path and filename of ouput GP results. By default is in the same folder as the input file and called "GP_results.txt".   
+- out_file_name: String. File path and filename of ouput GP results. By default is in the same folder as the input file and called "GP_results.txt".  
+- MC_plotting: Boolean. Whether to plot the MCMC corner plots, KDE peaks and silhouette scores. By default is False. Uses  out_file_name to save the plots. 
 - labels: List of Strings. Labels for the column of the output file. By default uses the same labels as the input file if they exist, otherwise uses generic labels dim0, dim1, ..., quantity, error. 

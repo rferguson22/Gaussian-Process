@@ -8,7 +8,7 @@ from GP_func import GP,kernel_func
 
 def create_GP():
 
-    file_path,resolution,MC_progress,out_file_name,labels=read_yaml()
+    file_path,resolution,MC_progress,MC_plotting,out_file_name,labels=read_yaml()
     
     xy_known,z_known,e_known,labels=read_data(file_path,labels)
 
@@ -18,7 +18,7 @@ def create_GP():
             " resolution values listed. Please check how many dimensions your problem is."
         raise ValueError(issue)
 
-    len_scale=len_scale_opt(xy_known,z_known,e_known,MC_progress,labels)
+    len_scale=len_scale_opt(xy_known,z_known,e_known,MC_progress,MC_plotting,labels)
     
     xy=fill_convex_hull(xy_known.T,resolution)
     
@@ -96,6 +96,7 @@ def read_yaml():
     file_path=options["file_name"]
     resolution=options["resolution"]
     MC_progress=options["MC_progress"]
+    MC_plotting=options["MC_plotting"]
     out_file_name=options["out_file_name"]
     labels=options["labels"]
 
@@ -112,12 +113,15 @@ def read_yaml():
     if MC_progress is None:
         MC_progress=False
 
+    if MC_plotting is None:
+        MC_plotting=False
+
     if out_file_name is None:
         original_file_path = Path(file_path)
         folder_path = original_file_path.parent
         out_file_name = folder_path / 'GP_results'
 
-    return file_path,resolution,MC_progress,out_file_name,labels
+    return file_path,resolution,MC_progress,MC_plotting,out_file_name,labels
 
 ##############################################################################
 
