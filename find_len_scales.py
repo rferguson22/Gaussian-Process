@@ -10,16 +10,15 @@ from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from scipy.spatial.distance import cdist
 from scipy.stats import gaussian_kde
 from scipy.signal import find_peaks
 from scipy.optimize import minimize
 from scipy.stats import norm
 
-from GP_func import GP,kernel_func
+from GP_func import GP
 
 
-def sigma_check(lengths,x_known_temp,y_known_temp,e_known_temp):
+def sigma_check(lengths,x_known,y_known,e_known):
 
     '''
     Calculates the loss function for a given length scale
@@ -28,14 +27,14 @@ def sigma_check(lengths,x_known_temp,y_known_temp,e_known_temp):
     if min(lengths)<0:
         return -10e12
 
-    y_fit,e_fit=GP(x_known_temp,y_known_temp,e_known_temp,x_known_temp,lengths)
+    y_fit,e_fit=GP(x_known,y_known,e_known,x_known,lengths)
     
     sigma=np.linspace(0.001,3,1000)
     total=0
 
     for i in range(len(sigma)):
         percent = sigma_to_percent(sigma[i])
-        total-=abs(calculate_std_percent(y_fit,y_known_temp,e_fit,sigma[i])-percent)
+        total-=abs(calculate_std_percent(y_fit,y_known,e_fit,sigma[i])-percent)
     
     return total
 
@@ -54,7 +53,7 @@ def sigma_to_percent(x):
 
 ##############################################################################################
 
-def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting,labels,out_file_name):  
+def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_file_name):  
 
     '''
     Finds the optimal length scale based on the given loss function. 
@@ -62,7 +61,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
     original_file_path = Path(out_file_name)
     plotting_path = original_file_path.parent
 
-    ndim=len(x_known_temp)
+    ndim=len(x_known)
     nwalkers=10*ndim
     max_n=2000*ndim
 
@@ -70,8 +69,8 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
     tau_tol=0.15
     
     endpoints=[]
-    for i in range(len(x_known_temp)):
-        diff=(max(x_known_temp[i])-min(x_known_temp[i]))/len(x_known_temp[i].T)
+    for i in range(len(x_known)):
+        diff=(max(x_known[i])-min(x_known[i]))/len(x_known[i].T)
         endpoints.append([1e-16,10*diff])
     
     sampling = LHS(xlimits=np.array(endpoints),criterion='center')
@@ -90,7 +89,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
         r_hat_conv=False
         
         old_tau=np.inf
-        sampler = emcee.EnsembleSampler(nwalkers,ndim,sigma_check,args=(x_known_temp,y_known_temp,e_known_temp),backend=backend,pool=pool)
+        sampler = emcee.EnsembleSampler(nwalkers,ndim,sigma_check,args=(x_known,y_known,e_known),backend=backend,pool=pool)
         for sample in sampler.sample(initial_positions,iterations=max_n,progress=MC_progress):
             if sampler.iteration%100:
                 continue
@@ -173,7 +172,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
     print(modes)
     
     def func_minimise(lengths):
-        return -sigma_check(lengths,x_known_temp,y_known_temp,e_known_temp)    
+        return -sigma_check(lengths,x_known,y_known,e_known)    
     
     bounds=[(1e-16,None) for i in range(ndim)]
 
@@ -232,30 +231,30 @@ def calc_r_hat(chains):
 
 ############################################################################
 
-def calculate_pull(z_fit,z_func,e_fit):
+def calculate_pull(y_fit,y_known,e_fit):
 
     '''
     Calculates the pull a.k.a residual
     '''
 
-    pull=np.zeros(len(z_fit))
+    pull=np.zeros(len(y_fit))
     
     e_fit[e_fit==0]=1e-12
 
-    for i in range(len(z_func)):
-        pull[i]=(z_fit[i]-z_func[i])/(e_fit[i])
+    for i in range(len(y_known)):
+        pull[i]=(y_fit[i]-y_known[i])/(e_fit[i])
 
     return np.array(pull)
 
 #######################################################################################
 
-def calculate_std_percent(z_fit,z_func,e_fit,std_coeff):
+def calculate_std_percent(y_fit,y_known,e_fit,std_coeff):
 
     '''
     Calculates the percentage of pulls that are within a standard deviation multiple
     '''
 
-    pull=calculate_pull(z_fit,z_func,std_coeff*e_fit)
+    pull=calculate_pull(y_fit,y_known,std_coeff*e_fit)
     
     percent=len([item for item in pull if abs(item)<=1])/len(pull)
     

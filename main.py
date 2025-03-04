@@ -4,28 +4,28 @@ import yaml
 from pathlib import Path
 from find_len_scales import len_scale_opt
 from convex_hull import fill_convex_hull
-from GP_func import GP,kernel_func
+from GP_func import GP
 
 def create_GP():
 
     file_path,resolution,MC_progress,MC_plotting,out_file_name,labels=read_yaml()
     
-    xy_known,z_known,e_known,labels=read_data(file_path,labels)
+    x_known,y_known,e_known,labels=read_data(file_path,labels)
 
     
-    if len(resolution)!=len(xy_known):
-        issue="Reading in the data at "+file_path+" showed a "+str(len(xy_known))+\
+    if len(resolution)!=len(x_known):
+        issue="Reading in the data at "+file_path+" showed a "+str(len(x_known))+\
             "D problem but there are "+str(len(resolution))+\
             " resolution values listed. Please check how many dimensions your problem is."
         raise ValueError(issue)
 
-    len_scale=len_scale_opt(xy_known,z_known,e_known,MC_progress,MC_plotting,labels,out_file_name)
+    len_scale=len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_file_name)
     
-    xy=fill_convex_hull(xy_known.T,resolution)
+    x_fit=fill_convex_hull(x_known.T,resolution)
     
-    y_fit,e_fit=GP(xy_known,z_known,e_known,xy.T,len_scale)
+    y_fit,e_fit=GP(x_known,y_known,e_known,x_fit.T,len_scale)
 
-    output_GP(xy,y_fit,e_fit,out_file_name,labels)
+    output_GP(x_fit,y_fit,e_fit,out_file_name,labels)
 
     print("Success")
 
@@ -82,11 +82,11 @@ def read_data(file_path,labels):
         issue="Expected "+str(len(data.columns))+ " column names in labels but received "+str(len(labels))
         raise ValueError(issue)
 
-    xy_known=data.iloc[:,:-2].to_numpy().T
-    z_known=data.iloc[:,-2].to_numpy().T
+    x_known=data.iloc[:,:-2].to_numpy().T
+    y_known=data.iloc[:,-2].to_numpy().T
     e_known=data.iloc[:,-1].to_numpy().T
     
-    return xy_known,z_known,e_known,labels
+    return x_known,y_known,e_known,labels
 
 ##############################################################################
 
@@ -128,13 +128,13 @@ def read_yaml():
 
 ##############################################################################
 
-def output_GP(xy,y_fit,e_fit,out_file_name,labels):
+def output_GP(x_fit,y_fit,e_fit,out_file_name,labels):
 
     '''
     Outputs the GP fits
     '''
 
-    data=np.vstack([xy.T,y_fit.T,e_fit.T])
+    data=np.vstack([x_fit.T,y_fit.T,e_fit.T])
 
     df=pd.DataFrame(data.T,columns=labels)
 
