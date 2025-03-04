@@ -181,7 +181,7 @@ def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,MC_progress,MC_plotting
     best=[]
     
     for j in range(len(modes)):
-        result=minimize(func_minimise,modes[j],method="Nelder-Mead",bounds=bounds)
+        result=minimize(func_minimise,modes[j],method='L-BFGS-B',bounds=bounds)
         if result.fun<score:
             best=result.x
             score=result.fun
