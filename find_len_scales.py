@@ -58,11 +58,12 @@ def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_fil
     '''
     Finds the optimal length scale based on the given loss function. 
     '''
+
     original_file_path = Path(out_file_name)
     plotting_path = original_file_path.parent
 
     ndim=len(x_known)
-    nwalkers=10*ndim
+    nwalkers=8*ndim
     max_n=2000*ndim
 
     r_hat_tol=1.18
@@ -100,14 +101,14 @@ def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_fil
             
             tau_conv=np.all((np.abs(old_tau-tau)/tau)<tau_tol)
             if MC_progress:
-                print(np.abs(old_tau-tau)/tau)
+                print("tau_stability:\t"+str(np.abs(old_tau-tau)/tau))
 
             chains=sampler.get_chain(discard=50,thin=5,flat=False)
             if chains.shape[1]>1:
                 r_hat=calc_r_hat(chains)
                 r_hat_conv=np.all(r_hat<r_hat_tol)
                 if MC_progress:
-                    print(r_hat)
+                    print("r_hat:\t\t"+str(r_hat))
             
             if r_hat_conv and tau_conv:
                 break
@@ -174,13 +175,13 @@ def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_fil
     def func_minimise(lengths):
         return -sigma_check(lengths,x_known,y_known,e_known)    
     
-    bounds=[(1e-16,None) for i in range(ndim)]
+    #bounds=[(1e-16,None) for i in range(ndim)]
 
     score=1e12
     best=[]
     
     for j in range(len(modes)):
-        result=minimize(func_minimise,modes[j],method='L-BFGS-B',bounds=bounds)
+        result=minimize(func_minimise,modes[j],method="Nelder-Mead")
         if result.fun<score:
             best=result.x
             score=result.fun
