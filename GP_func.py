@@ -8,16 +8,36 @@ def GP(x_known, y_known, e_known,x_fit,lengths):
     Perform GP regression to find a predicted mean and uncertainty for unknown datapoints
     '''
 
-    K = kernel_func(x_known, x_known,lengths) + e_known**2 * np.eye(len(e_known))
-    K_s = kernel_func(x_known,x_fit,lengths)
-    K_ss = kernel_func(x_fit,x_fit,lengths) 
-    K_inv = inv(K)
-        
-    mu_s = K_s.T.dot(K_inv).dot(y_known)
+    y_fit=np.array([])
+    e_fit=np.array([])
 
-    sigma_s = K_ss - K_s.T.dot(K_inv).dot(K_s)
+    starting_val=10000
+    l=0
+
+    K = kernel_func(x_known, x_known,lengths) + e_known**2 * np.eye(len(e_known))
+    K_inv = inv(K)
+
+    while l<len(x_fit.T):
+
+        l+=starting_val
+
+        if l>len(x_fit.T):
+            x_fit_temp=x_fit.T[l-starting_val:].T
+        else:
+            x_fit_temp=x_fit.T[l-starting_val:l].T
+
+
+        K_s = kernel_func(x_known,x_fit_temp,lengths)
+        K_ss = kernel_func(x_fit_temp,x_fit_temp,lengths) 
+            
+        mu_s = K_s.T.dot(K_inv).dot(y_known)
+
+        sigma_s = np.sqrt(abs(np.diag(K_ss - K_s.T.dot(K_inv).dot(K_s))))
+
+        y_fit=np.concatenate((y_fit,mu_s))
+        e_fit=np.concatenate((e_fit,sigma_s))
     
-    return mu_s, np.sqrt(abs(np.diag(sigma_s)))
+    return y_fit,e_fit
 
 #########################################################################
 
