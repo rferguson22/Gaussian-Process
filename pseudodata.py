@@ -1,13 +1,10 @@
 import numpy as np
 from numpy import random
-from numpy.linalg import inv
 
-from scipy.spatial import ConvexHull
-from scipy.spatial.distance import cdist
-from scipy.optimize import curve_fit,minimize
+from scipy.optimize import curve_fit
 from scipy.special import legendre
 from scipy.stats.distributions import norm
-from scipy.stats import poisson,gaussian_kde
+from scipy.stats import poisson
 import scipy
 
 from iminuit import Minuit
@@ -15,51 +12,24 @@ from iminuit.cost import LeastSquares
 
 import matplotlib.pyplot as plt
 
-import emcee
-import corner
 import math
 import pandas as pd 
 from smt.sampling_methods import LHS
-import multiprocessing
 
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from scipy.signal import find_peaks
-import corner
 from collections import Counter
+
+from find_len_scales import len_scale_opt,calculate_std_percent,calculate_pull
+from convex_hull import fill_convex_hull,round_to_res
+from GP_func import GP
 
 #############################################################################################################
 
-def kernel_func(xy1, xy2,l):
-    
-    sq_norm = -0.5*((cdist(xy1[:1].T, xy2[:1].T, 'sqeuclidean')/((l[0])**2))+
-    (cdist(xy1[1:].T, xy2[1:].T, 'sqeuclidean')/((l[1])**2)))
-                      
-    rbf=np.exp(sq_norm)  
-    
-    if len(xy1)!=len(l):
-        rbf*=l[-1]
-    
-    return rbf
-
-##############################################################################################################
-
-def GP(xy_known, z_known, e_known,xy,lengths):
-
-    K = kernel_func(xy_known, xy_known,lengths) + e_known**2 * np.eye(len(e_known))
-    K_s = kernel_func(xy_known,xy,lengths)
-    K_ss = kernel_func(xy,xy,lengths) 
-    K_inv = inv(K)
-        
-    mu_s = K_s.T.dot(K_inv).dot(z_known)
-
-    sigma_s = K_ss - K_s.T.dot(K_inv).dot(K_s)
-    
-    return mu_s, np.sqrt(abs(np.diag(sigma_s)))
-
-############################################################################################################
-
 def create_convex_hull_boundary(xy_known,accuracy_e,accuracy_a):
+
+    '''
+    Creates the boundary assuming the binning edges need to be taken into account
+    '''
+
     
     known_e,temp=[],[]
     decimal_places_e=str(accuracy_e)[::-1].find('.')
@@ -133,73 +103,7 @@ def create_convex_hull_boundary(xy_known,accuracy_e,accuracy_a):
     points.T[1]=[1 if item>1 else item for item in points.T[1]]
     points.T[1]=[-1 if item<-1 else item for item in points.T[1]]
     
-    xy=create_convex_hull(points,accuracy_e,accuracy_a)
-    
-    return xy    
-
-#####################################################################################################
-
-def create_convex_hull(points,accuracy_e,accuracy_a):
-    
-    decimal_places_e=str(accuracy_e)[::-1].find('.')
-    decimal_places_a=str(accuracy_a)[::-1].find('.')
-
-    hull=ConvexHull(points)
-
-    corners=points[hull.simplices]
-
-    hull_boundary_e=[]
-    hull_boundary_a=[]
-
-    for i in range(len(corners)):
-
-        if corners[i][0][0]<corners[i][1][0]:
-            start=corners[i][0][0]
-            end=corners[i][1][0]
-        else:
-            start=corners[i][1][0]
-            end=corners[i][0][0]
-
-        if hull.equations[i][1]!=0:
-
-            if end==max(points.T[0]):
-                addition=accuracy_e/2
-            else:
-                addition=0
-
-
-            energies=np.around(np.arange(start,end+addition,accuracy_e),decimal_places_e)
-            energies=np.array([item for item in energies if (item!=end) or\
-                      (item==end and addition!=0)])
-            angles=np.around(-(hull.equations[i][0]*energies+hull.equations[i][2])\
-                             /hull.equations[i][1],2)
-            hull_boundary_e=np.concatenate((hull_boundary_e,energies))
-            hull_boundary_a=np.concatenate((hull_boundary_a,angles))
-
-    hull_boundary=np.column_stack((hull_boundary_e,hull_boundary_a)).T
-
-    e=np.around(np.arange(min(hull_boundary[0]),max(hull_boundary[0])+accuracy_e/2,accuracy_e),decimal_places_e)
-
-    h_bound=[]
-    xy=[]
-    
-    for i in range(len(e)):
-        temp=np.argwhere(hull_boundary[0]==e[i])
-        if hull_boundary[1][temp[0][0]]<hull_boundary[1][temp[1][0]]:
-            lower=hull_boundary[1][temp[0][0]]
-            upper=hull_boundary[1][temp[1][0]]
-        else:
-            lower=hull_boundary[1][temp[1][0]]
-            upper=hull_boundary[1][temp[0][0]]        
-
-        angle=lower
-        while angle<=upper:
-            xy.append([e[i],angle])
-            angle+=accuracy_a
-            angle=round(angle,decimal_places_a)
-
-
-    xy=np.array(xy)
+    xy=fill_convex_hull(points,[accuracy_e,accuracy_a])
     
     return xy.T
 
@@ -207,6 +111,11 @@ def create_convex_hull(points,accuracy_e,accuracy_a):
 
 def assign_known_parameters(energy_limits,measured_angle_limits,\
                             datapoints_energies_measured,datapoints_angles_measured):
+    
+
+    '''
+    Generates known kinematic points
+    '''
 
     x_known,y_known=[],[]
 
@@ -241,6 +150,10 @@ def assign_known_parameters(energy_limits,measured_angle_limits,\
 
 def generate_pseudo_func(xy,coeff_all,legendre_orders):
 
+    '''
+    Generates pseduo function
+    '''
+    
     z_func=np.zeros(len(xy.T))
 
     for i in range(len(z_func)):
@@ -267,6 +180,10 @@ def generate_pseudo_func(xy,coeff_all,legendre_orders):
 #################################################################################################################
 
 def generate_pseudo_data(xy_known,xy,z_func,eff_count_limits):
+
+    '''
+    Generates the pseduodata value
+    '''
 
     z_known,e_known,z_func_known=[],[],[]   
     
@@ -305,210 +222,12 @@ def generate_pseudo_data(xy_known,xy,z_func,eff_count_limits):
 
 ######################################################################################################
 
-def calculate_std_percent(z_fit,z_func,e_fit,std_coeff):
-    
-    
-    pull=calculate_pull(z_fit,z_func,std_coeff*e_fit)
-    
-    percent=len([item for item in pull if abs(item)<=1])/len(pull)
-    
-    return percent
-
-########################################################################################################
-
-def len_scale_opt(x_known_temp,y_known_temp,e_known_temp,func):  
-    
-    ndim=len(x_known_temp)
-    nwalkers=8*ndim
-    max_n=2000*ndim
-    
-    endpoints=[]
-    for i in range(len(x_known_temp)):
-        diff=(max(x_known_temp[i])-min(x_known_temp[i]))/len(x_known_temp[i].T)
-        endpoints.append([1e-16,10*diff])
-    
-    sampling = LHS(xlimits=np.array(endpoints),criterion='center')
-    initial_positions = sampling(nwalkers)
-    
-    filename="backend.h5"
-    backend=emcee.backends.HDFBackend(filename)
-    backend.reset(nwalkers,ndim)
-        
-    with multiprocessing.Pool(16) as pool:
-
-        index=0
-        autocorr=np.empty(max_n)
-        r_hat_conv=False
-        
-        old_tau=np.inf
-        sampler = emcee.EnsembleSampler(nwalkers,ndim,func,args=(x_known_temp,y_known_temp,e_known_temp),backend=backend,pool=pool)
-        for sample in sampler.sample(initial_positions,iterations=max_n,progress=True):
-            if sampler.iteration%100:
-                continue
-        
-            tau=sampler.get_autocorr_time(tol=0)
-            autocorr[index]=np.mean(tau)
-            index+=1
-            
-            tau_conv=np.all((np.abs(old_tau-tau)/tau)<tau_tol)
-            print(np.abs(old_tau-tau)/tau)
-
-            chains=sampler.get_chain(discard=50,thin=5,flat=False)
-            if chains.shape[1]>1:
-                r_hat=calc_r_hat(chains)
-                print(r_hat)
-                r_hat_conv=np.all(r_hat<r_hat_tol)
-            
-            if r_hat_conv and tau_conv:
-                break
-            old_tau=tau
-
-    burnin=int(0.2*sampler.iteration)
-    
-    samples = sampler.get_chain(discard=burnin,thin=5,flat=True)
-
-    labels=["L1","L2"]
-
-    fig=corner.corner(samples,labels=labels)
-    fig.savefig("corner_plot.png")
-
-    num_peaks,x,density=test_unimode(samples,dim=0)
-
-    plt.figure(figsize=(8,6))
-    plt.plot(x,density,label="KDE")
-    plt.title(f"KDE and Peak Detection (Peaks Found: {num_peaks})")
-    plt.xlabel("Dim 1")
-    plt.ylabel("Density")
-    plt.legend()
-    plt.show()
-    plt.close()
-
-    if num_peaks>1:
-        print("Multimodal distribution detected. Performing Clustering")
-
-        silhouette_scores=[]
-        K_values=range(2,11)
-
-        for K in K_values:
-            kmeans=KMeans(n_clusters=K)
-            cluster_labels=kmeans.fit_predict(samples)
-            score=silhouette_score(samples,cluster_labels)
-            silhouette_scores.append(score)
-            
-        plt.figure(figsize=(8,6))
-        plt.plot(K_values,silhouette_scores,"-o",color="blue")
-        plt.xlabel("Number of Clusters (K)")
-        plt.ylabel("Silhouette Score")
-        plt.title("Silhouette Score for Optimal K")
-        plt.grid(True)
-        plt.show()
-        plt.close()
-
-        optimal_K=K_values[np.argmax(silhouette_scores)]
-        print(f"Optimal number of Clusters (K): {optimal_K}")
-
-        kmeans=KMeans(n_clusters=optimal_K)
-        cluster_labels=kmeans.fit_predict(samples)
-        modes=kmeans.cluster_centers_
-
-    else:
-        modes=np.mean(samples,axis=0,keepdims=True)
-
-
-    print(modes)
-    
-    def func_minimise(lengths):
-        return -func(lengths,x_known_temp,y_known_temp,e_known_temp)    
-    
-    bounds=[(1e-16,None) for i in range(ndim)]
-
-    score=1e12
-    best=[]
-    
-    for j in range(len(modes)):
-        result=minimize(func_minimise,modes[j],method="Nelder-Mead",bounds=bounds)
-        if result.fun<score:
-            best=result.x
-            score=result.fun
-
-    print(best)
-    print(score)
-
-    #return best,score
-    return best
-
-####################################################################################
-
-def sigma_to_percent(x):
-    upper=scipy.stats.norm.cdf(x)
-    lower=scipy.stats.norm.cdf(-x)
-
-    return upper-lower
-
-#####################################################################################
-
-def sigma_check(lengths,x_known_temp,y_known_temp,e_known_temp):
-
-    if min(lengths)<0:
-        return -10e12
-
-    y_fit,e_fit=GP(x_known_temp,y_known_temp,e_known_temp,x_known_temp,lengths)
-    
-    sigma=np.linspace(0.001,3,1000)
-    total=0
-
-    for i in range(len(sigma)):
-        percent = sigma_to_percent(sigma[i])
-        total-=abs(calculate_std_percent(y_fit,y_known_temp,e_fit,sigma[i])-percent)
-    
-    return total
-
-############################################################################################
-
-def test_unimode(samples,dim=0):
-    
-    kde = gaussian_kde(samples[:,dim])
-    x=np.linspace(min(samples[:,dim]),max(samples[:,dim]),1000)
-    density=kde(x)
-
-    peaks,temp=find_peaks(density)
-
-    return len(peaks),x,density
-
-############################################################################################
-
-def calc_r_hat(chains):
-
-    n_chains,n_samples,n_params=chains.shape
-
-    w=np.mean(np.var(chains,axis=1,ddof=1),axis=0)
-
-    chain_means=np.mean(chains,axis=1)
-    b=n_samples*np.var(chain_means,axis=0,ddof=1)
-
-    var_plus=(1-1/n_samples)*w+(1/n_samples)*b
-
-    r_hat=np.sqrt(var_plus/w)
-
-    return r_hat
-
-##########################################################################################
-
-def calculate_pull(z_fit,z_func,e_fit):
-
-    pull=np.zeros(len(z_fit))
-    
-    e_fit[e_fit==0]=1e-12
-
-    for i in range(len(z_func)):
-        pull[i]=(z_fit[i]-z_func[i])/(e_fit[i])
-
-    return np.array(pull)
-
-############################################################################################
-
 def fit_data(xy_points,z_points,e_points,coeff_limits,gaus_mean_limits,gaus_width_limits,coeff_all):
-    
+
+    '''
+    Fits the functional form of the pseudodata surface
+    '''
+
     initial_form=[np.mean(coeff_limits),np.mean(gaus_mean_limits),np.mean(gaus_width_limits)]
     initial=np.array(initial_form*(int(len(coeff_all)/3)))
     
@@ -536,6 +255,10 @@ def fit_data(xy_points,z_points,e_points,coeff_limits,gaus_mean_limits,gaus_widt
 
 def model(xy_points,theta):
 
+    '''
+    Pseudodata function
+    '''
+
     i=0
     value=0
 
@@ -550,6 +273,11 @@ def model(xy_points,theta):
 #############################################################################################################
 
 def get_xy_rand(xy,xy_known,accuracy_a,accuracy_e):
+
+    '''
+    Samples kinematic points within convex hull
+    '''
+
     xlimits=[[min(xy[0]),max(xy[0])],[min(xy[1]),max(xy[1])]]
     mul_fac=1
     sampling = LHS(xlimits=np.array(xlimits),criterion='center')
@@ -579,18 +307,11 @@ def get_xy_rand(xy,xy_known,accuracy_a,accuracy_e):
 
 #####################################################################################################
 
-def round_to_res(value,res):
-    
-    val=round(value/res)*res
-    
-    if res<1:
-        val=np.around(val,str(res)[::-1].find('.'))
-        
-    return val
-
-#####################################################################################################
-
 def get_fit_points(xy_points,xy,z_fit,e_fit,z_func):
+
+    '''
+    Gets GP values from sampled points
+    '''
     
     z_fit_points=np.ones(len(xy_points.T))
     e_fit_points=np.ones(len(xy_points.T))
@@ -608,8 +329,11 @@ def get_fit_points(xy_points,xy,z_fit,e_fit,z_func):
 
 ###########################################################################################
 
-def fit_gaussian1(x_data1,x_data2,range_data,bins):
+def fit_gaussian(x_data1,x_data2,range_data,bins):
 
+    '''
+    Fits Gaussian
+    '''
 
     hist1, bin_edges1 = np.histogram(x_data1,bins=bins,range=range_data)
     hist1=hist1/sum(hist1)
@@ -656,25 +380,11 @@ def fit_gaussian1(x_data1,x_data2,range_data,bins):
 
 #####################################################################################################################
 
-def array_to_latex_table(input_array):
-    print("\\begin{center}\n\\begin{tabularx}{1.0\\columnwidth}{|>{\\centering\\arraybackslash}X"+\
-          "|>{\\raggedleft\\arraybackslash}X"*(len(input_array[0])-1)+\
-      "|}\n\\hline&\multicolumn{2}{|c|}{Pseudodata} & \multicolumn{2}{|c|}{GP Datapoints}"+r"\\"+"\n\\hline")
-    for i in range(len(input_array)):
-        string=""
-        j=0
-        while j<len(input_array[i])-1:
-            string+=str(input_array[i][j])+"&"
-            j+=1
-        string+=str(input_array[i][-1])+r"\\"
-        print(string+"\n\\hline")
-    print("\\end{tabularx}\n\\end{center}")
-    
-    return
-
-####################################################################################################################
-
 def coeff_pull_table():
+
+    '''
+    Gets the pull of the fitted coefficients
+    '''
 
     data_to_plot=pd.read_csv("pseudodata_results.csv")
 
@@ -684,7 +394,7 @@ def coeff_pull_table():
     coeff_GP_pull_rand=np.array([np.fromstring(item.strip("[]"),sep=" ") for item in coeff_GP_pull_rand])
 
     i=0
-    coeff_pulls=[["Coefficient","Mean","Variance","Mean","Variance"]]
+    coeff_pulls=[]
 
     array1=coeff_known_pull
     array2=coeff_GP_pull_rand
@@ -692,24 +402,22 @@ def coeff_pull_table():
     while i<len(coeff_known_pull.T):
         l=legendre_orders[int(i/3)]
         
-        a=fit_gaussian1(array1.T[i],array2.T[i],(-2,2),100)
+        a=fit_gaussian(array1.T[i],array2.T[i],(-2,2),100)
         
-        coeff_pulls.append(np.concatenate(([fr"$c_{l}$"], [f"{x:.2f}" for x in np.around(a, 2)])))
+        coeff_pulls.append(a)
         
         
-        b=fit_gaussian1(array1.T[i+1],array2.T[i+1],(-2,2),100)
+        b=fit_gaussian(array1.T[i+1],array2.T[i+1],(-2,2),100)
         
-        coeff_pulls.append(np.concatenate(([fr"$\mu_{l}$"], [f"{x:.2f}" for x in np.around(b, 2)])))
+        coeff_pulls.append(b)
         
-        c=fit_gaussian1(array1.T[i+2],array2.T[i+2],(-2,2),100)
+        c=fit_gaussian(array1.T[i+2],array2.T[i+2],(-2,2),100)
         
-        coeff_pulls.append(np.concatenate(([fr"$\sigma_"+str(l)+"^2$"], [f"{x:.2f}" for x in np.around(c, 2)])))
+        coeff_pulls.append(c)
 
         i+=3
 
     coeff_pulls=np.array(coeff_pulls)
-
-    array_to_latex_table(coeff_pulls)
 
     return
 
@@ -717,6 +425,10 @@ def coeff_pull_table():
 ###################################################################################################################
 
 def fit_pseudodata():
+
+    '''
+    Fits pseudodata
+    '''
 
     xlimits=([coeff_limits]*len(legendre_orders))
 
@@ -767,7 +479,7 @@ def fit_pseudodata():
         
         z_known,e_known,z_func_known=generate_pseudo_data(xy_known,xy,z_func,eff_count_limits)
 
-        hyperpars=len_scale_opt(xy_known,z_known,e_known,sigma_check)
+        hyperpars=len_scale_opt(xy_known,z_known,e_known,False,False,"","")
             
         z_fit,e_fit=GP(xy_known,z_known,e_known,xy,hyperpars)
         
@@ -810,6 +522,11 @@ def fit_pseudodata():
 ################################################################################################################
 
 def fit_to_func():
+
+    '''
+    Generates pseudodata testing graphs
+    '''
+
     def fix_array(array):
         return np.array([float(i) for i in array.strip("[]").split()])
 
@@ -875,7 +592,7 @@ def fit_to_func():
     plt.xlabel(r"$\cos\theta$")
     plt.grid()
     plt.legend()
-    plt.savefig("known_fit.png")
+    plt.savefig("./pseudodata_graphs/known_fit.png")
     plt.close()
 
     plt.plot(y_temp,y_gp,label="GP")
@@ -885,7 +602,7 @@ def fit_to_func():
     plt.xlabel(r"$\cos\theta$")
     plt.grid()
     plt.legend()
-    plt.savefig("gp_fit.png")
+    plt.savefig("./pseudodata_graphs/gp_fit.png")
     plt.close()
 
     plt.errorbar(y_known_temp,z_known_temp,yerr=e_known_temp,fmt="x",alpha=0.7,ecolor="black",color="black")
@@ -895,7 +612,7 @@ def fit_to_func():
     plt.xlabel(r"$\cos\theta$")
     plt.grid()
     plt.legend()
-    plt.savefig("both_fit.png")
+    plt.savefig("./pseudodata_graphs/both_fit.png")
     plt.close()
 
     return
@@ -922,6 +639,6 @@ tau_tol=0.15
 
 #fit_pseudodata()
 
-coeff_pull_table()
+#coeff_pull_table()
 
-#fit_to_func()
+fit_to_func()
