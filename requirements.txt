@@ -9,3 +9,7 @@ matplotlib
 scipy
 yaml
 pathlib
+iminuit
+math
+smt
+collections
