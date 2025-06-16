@@ -2,9 +2,9 @@ cff-version: 1.2.0
 message: "If you use this code, please cite the following paper:"
 authors:
   - family-names: Ferguson
-    given-names: R. F.
+    given-names: R.F.
   - family-names: Ireland
-    given-names: D. G.
+    given-names: D.G.
   - family-names: McKinnon
     given-names: B.
 title: "Data-driven Approach for Interpolation of Sparse Data"
