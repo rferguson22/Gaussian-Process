@@ -22,11 +22,11 @@ CITATION
 
 If you use this code, please cite:
 
-> R. F. Ferguson, D. G. Ireland & B. McKinnon, “Data‑driven Approach for Interpolation of Sparse Data”, arXiv:2505.01473 (2025).
+> R.F. Ferguson, D.G. Ireland & B. McKinnon, “Data‑driven Approach for Interpolation of Sparse Data”, arXiv:2505.01473 (2025).
 
 ```bibtex
-@misc{ferguson2025data,
-  author       = {R. F. Ferguson and D. G. Ireland and B. McKinnon},
+@misc{GP_ferguson,
+  author       = {R.F. Ferguson and D.G. Ireland and B. McKinnon},
   title        = {Data‑driven Approach for Interpolation of Sparse Data},
   year         = {2025},
   eprint       = {2505.01473},
