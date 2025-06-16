@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the following paper:"
+authors:
+  - family-names: Ferguson
+    given-names: R. F.
+  - family-names: Ireland
+    given-names: D. G.
+  - family-names: McKinnon
+    given-names: B.
+title: "Data-driven Approach for Interpolation of Sparse Data"
+version: 1.0.0
+doi: 10.48550/arXiv.2505.01473
+date-released: 2025-05-02
+url: https://arxiv.org/abs/2505.01473
