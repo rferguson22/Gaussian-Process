@@ -6,13 +6,14 @@ This Python script generates a **Gaussian Process (GP)** using **Markov Chain Mo
 
 ## File Formatting Assumptions
 
-For an *n*-dimensional problem, the input file must contain **n + 2 columns**:
+For an **n-dimensional** problem, the input file must contain **n + 2 columns**:
 
-1. First *n* columns: Input kinematic variables.  
-2. *(n+1)*th column: Physics quantity of interest.  
-3. *(n+2)*th column: Associated error of the physics quantity.
+1. First `n` columns: Input kinematic variables  
+2. The `(n+1)`th column: Physics quantity of interest  
+3. The `(n+2)`th column: Associated error of the physics quantity
 
-The `options.yaml` file must also contain a list named `resolution` with **n** floats/integers for an *n*-dimensional problem.
+The `options.yaml` file must also contain a list named `resolution` with **n** floats or integers for an **n-dimensional** problem.
+
 
 ---
 
