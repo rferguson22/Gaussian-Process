@@ -1,6 +1,8 @@
 # Gaussian Process with MCMC Length Scale Optimisation
 
-This Python script generates a **Gaussian Process (GP)** using **Markov Chain Monte Carlo (MCMC)** to optimise the length scale from a novel loss function.
+This Python script generates a **Gaussian Process (GP)** using **Markov Chain Monte Carlo (MCMC)** to optimise the length scale from a novel loss function.  
+See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse Data*](https://arxiv.org/abs/2505.01473).
+
 
 ---
 
