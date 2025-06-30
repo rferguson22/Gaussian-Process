@@ -39,12 +39,12 @@ If you use this code, please cite:
 > arXiv:2505.01473 (2025).
 
 ```bibtex
-@misc{GP_ferguson,
-  author       = {R.F. Ferguson and D.G. Ireland and B. McKinnon},
-  title        = {Data‑driven Approach for Interpolation of Sparse Data},
-  year         = {2025},
-  eprint       = {2505.01473},
-  archivePrefix= {arXiv},
-  primaryClass = {physics.data‑an},
-  doi          = {10.48550/arXiv.2505.01473}
+@misc{GP_sparse,
+      title={Data-driven Approach for Interpolation of Sparse Data}, 
+      author={R. F. Ferguson and D. G. Ireland and B. McKinnon},
+      year={2025},
+      eprint={2505.01473},
+      archivePrefix={arXiv},
+      primaryClass={physics.data-an},
+      url={https://arxiv.org/abs/2505.01473}, 
 }
