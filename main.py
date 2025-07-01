@@ -5,31 +5,49 @@ from pathlib import Path
 from find_len_scales import len_scale_opt
 from convex_hull import fill_convex_hull
 from GP_func import GP
+import time
 
 def create_GP():
 
-    file_path,resolution,MC_progress,MC_plotting,out_file_name,labels=read_yaml()
-    
-    x_known,y_known,e_known,labels=read_data(file_path,labels)
+    timings = {}
+    overall_start = time.time()
 
-    
-    if len(resolution)!=len(x_known):
-        issue="Reading in the data at "+file_path+" showed a "+str(len(x_known))+\
-            "D problem but there are "+str(len(resolution))+\
+    start = time.time()
+    file_path, resolution, MC_progress, MC_plotting, out_file_name, labels = read_yaml()
+    timings['read_yaml'] = time.time() - start
+
+    start = time.time()
+    x_known, y_known, e_known, labels = read_data(file_path, labels)
+    timings['read_data'] = time.time() - start
+
+    if len(resolution) != len(x_known):
+        issue = (
+            "Reading in the data at " + file_path +
+            " showed a " + str(len(x_known)) +
+            "D problem but there are " + str(len(resolution)) +
             " resolution values listed. Please check how many dimensions your problem is."
+        )
         raise ValueError(issue)
 
-    len_scale=len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_file_name)
-    
-    x_fit=fill_convex_hull(x_known.T,resolution)
-    
-    y_fit,e_fit=GP(x_known,y_known,e_known,x_fit.T,len_scale)
+    start = time.time()
+    len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name)
+    timings['len_scale_opt'] = time.time() - start
 
-    output_GP(x_fit,y_fit,e_fit,out_file_name,labels)
+    start = time.time()
+    x_fit = fill_convex_hull(x_known.T, resolution)
+    timings['fill_convex_hull'] = time.time() - start
 
-    print("Success")
+    start = time.time()
+    y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
+    timings['GP'] = time.time() - start
 
-    return
+    start = time.time()
+    output_GP(x_fit, y_fit, e_fit, out_file_name, labels)
+    timings['output_GP'] = time.time() - start
+
+    timings['total_time'] = time.time() - overall_start
+
+    return timings
 
 ##############################################################################
 
@@ -144,6 +162,19 @@ def output_GP(x_fit,y_fit,e_fit,out_file_name,labels):
 
 ################################################################################
 
-create_GP()
+df = pd.DataFrame()
+
+for i in range(100):
+    print(f"Run {i + 1}/100")
+    try:
+        result = create_GP()
+        result['run'] = i + 1
+    except Exception as e:
+        result = {'run': i + 1, 'error': str(e)}
+        print(f"Error during run {i + 1}: {e}")
+    df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
+
+df.to_csv("timing_log.csv", index=False)
+print("Timing log saved to timing_log.csv")
 
 
