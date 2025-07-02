@@ -6,6 +6,7 @@ from find_len_scales import len_scale_opt
 from convex_hull import fill_convex_hull
 from GP_func import GP
 import time
+import matplotlib.pyplot as plt
 
 def create_GP():
 
@@ -162,19 +163,39 @@ def output_GP(x_fit,y_fit,e_fit,out_file_name,labels):
 
 ################################################################################
 
-df = pd.DataFrame()
+def timing_check():
+    df = pd.DataFrame()
 
-for i in range(100):
-    print(f"Run {i + 1}/100")
-    try:
-        result = create_GP()
-        result['run'] = i + 1
-    except Exception as e:
-        result = {'run': i + 1, 'error': str(e)}
-        print(f"Error during run {i + 1}: {e}")
-    df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
+    for i in range(100):
+        print(f"Run {i + 1}/100")
+        try:
+            result = create_GP()
+            result['run'] = i + 1
+        except Exception as e:
+            result = {'run': i + 1, 'error': str(e)}
+            print(f"Error during run {i + 1}: {e}")
+        df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
 
-df.to_csv("timing_log.csv", index=False)
-print("Timing log saved to timing_log.csv")
+    df.to_csv("timing_log_v2.csv", index=False)
+    print("Timing log saved to timing_log.csv")
 
+    return
+
+#########################################################################################################
+
+#timing_check()
+file=1
+
+df = pd.read_csv("timing_log_v"+str(file)+".csv")
+df = df.dropna(subset=["len_scale_opt"])
+
+plt.figure(figsize=(8, 6))
+plt.hist(df["len_scale_opt"], bins=7)
+plt.title("v"+str(file)+" len scale opt timings")
+plt.xlabel("Time (seconds)")
+plt.ylabel("Frequency")
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("./Graphs/len_scale_time_v"+str(file)+".png")
+plt.show()
 

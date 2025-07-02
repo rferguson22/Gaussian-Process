@@ -24,19 +24,25 @@ def sigma_check(lengths,x_known,y_known,e_known):
     Calculates the loss function for a given length scale
     '''
 
-    if min(lengths)<0:
-        return -10e12
+    if np.any(lengths < 0):
+        return -1e13
 
-    y_fit,e_fit=GP(x_known,y_known,e_known,x_known,lengths)
-    
-    sigma=np.linspace(0.001,3,1000)
-    total=0
+    y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
 
-    for i in range(len(sigma)):
-        percent = sigma_to_percent(sigma[i])
-        total-=abs(calculate_std_percent(y_fit,y_known,e_fit,sigma[i])-percent)
-    
-    return total
+    pulls = calculate_pull(y_fit, y_known, e_fit)  
+
+    sigma_vals = np.linspace(0.001, 3, 1000)  
+
+    expected_percents = sigma_to_percent(sigma_vals) 
+
+    abs_pulls = np.abs(pulls)[:, None]  
+    mask = abs_pulls <= sigma_vals  
+
+    fractions_within = mask.mean(axis=0) 
+
+    loss = -np.sum(np.abs(fractions_within - expected_percents))
+
+    return loss
 
 ##########################################################################################
 
@@ -238,14 +244,9 @@ def calculate_pull(y_fit,y_known,e_fit):
     Calculates the pull a.k.a residual
     '''
 
-    pull=np.zeros(len(y_fit))
+    pull = (y_fit - y_known) / np.maximum(e_fit, 1e-12)
     
-    e_fit[e_fit==0]=1e-12
-
-    for i in range(len(y_known)):
-        pull[i]=(y_fit[i]-y_known[i])/(e_fit[i])
-
-    return np.array(pull)
+    return pull
 
 #######################################################################################
 
