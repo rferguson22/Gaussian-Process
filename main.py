@@ -183,19 +183,26 @@ def timing_check():
 
 #########################################################################################################
 
+def plotting(file):
+
+
+    df = pd.read_csv("timing_log_v"+str(file)+".csv")
+    df = df.dropna(subset=["len_scale_opt"])
+
+    plt.figure(figsize=(8, 6))
+    plt.hist(df["len_scale_opt"], bins=7)
+    plt.title("v"+str(file)+" len scale opt timings")
+    plt.xlabel("Time (seconds)")
+    plt.ylabel("Frequency")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("./Graphs/len_scale_time_v"+str(file)+".png")
+    plt.show()
+
+    return
+
+########################################################################################################
+
 #timing_check()
-file=1
 
-df = pd.read_csv("timing_log_v"+str(file)+".csv")
-df = df.dropna(subset=["len_scale_opt"])
-
-plt.figure(figsize=(8, 6))
-plt.hist(df["len_scale_opt"], bins=7)
-plt.title("v"+str(file)+" len scale opt timings")
-plt.xlabel("Time (seconds)")
-plt.ylabel("Frequency")
-plt.grid(True)
-plt.tight_layout()
-plt.savefig("./Graphs/len_scale_time_v"+str(file)+".png")
-plt.show()
-
+plotting(2)
