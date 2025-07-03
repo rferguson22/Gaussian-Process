@@ -17,11 +17,12 @@ from scipy.stats import norm
 
 from GP_func import GP
 
+###################################################################################################
 
-def sigma_check(lengths,x_known,y_known,e_known):
+def sigma_check(lengths, x_known, y_known, e_known):
 
     '''
-    Calculates the loss function for a given length scale
+    Computes the loss function:
     '''
 
     if np.any(lengths < 0):
@@ -29,16 +30,15 @@ def sigma_check(lengths,x_known,y_known,e_known):
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
 
-    pulls = calculate_pull(y_fit, y_known, e_fit)  
+    sigma_vals = np.linspace(0.001, 3, 1000) 
+    
+    scaled_e = e_fit[:, None] * sigma_vals[None, :] 
 
-    sigma_vals = np.linspace(0.001, 3, 1000)  
+    pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
 
-    expected_percents = sigma_to_percent(sigma_vals) 
+    fractions_within = np.mean(np.abs(pulls) <= 1, axis=0)
 
-    abs_pulls = np.abs(pulls)[:, None]  
-    mask = abs_pulls <= sigma_vals  
-
-    fractions_within = mask.mean(axis=0) 
+    expected_percents = sigma_to_percent(sigma_vals)
 
     loss = -np.sum(np.abs(fractions_within - expected_percents))
 
