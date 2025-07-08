@@ -27,7 +27,7 @@ def GP(x_known, y_known, e_known, x_fit, lengths, batch_size=10000):
         mu_s = K_s.T @ alpha
 
         v = solve(L, K_s)
-        var_s = np.clip(K_ss_diag - np.sum(v**2, axis=0), 0, None)
+        var_s = np.clip(K_ss_diag - np.sum(v**2, axis=0), 1e-12, None)
         sigma_s = np.sqrt(var_s)
 
         y_fit.append(mu_s)
