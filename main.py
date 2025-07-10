@@ -34,6 +34,10 @@ def create_GP():
     len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name)
     timings['len_scale_opt'] = time.time() - start
 
+    len_scale = np.asarray(len_scale).flatten()
+    for j, val in enumerate(len_scale):
+        timings[f'len_scale_{j}'] = val
+
     start = time.time()
     x_fit = fill_convex_hull(x_known.T, resolution)
     timings['fill_convex_hull'] = time.time() - start
@@ -176,7 +180,7 @@ def timing_check():
             print(f"Error during run {i + 1}: {e}")
         df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
 
-    df.to_csv("timing_log_v2.csv", index=False)
+    df.to_csv("timing_log_v3.csv", index=False)
     print("Timing log saved to timing_log.csv")
 
     return
@@ -203,6 +207,6 @@ def plotting(file):
 
 ########################################################################################################
 
-#timing_check()
+timing_check()
 
-plotting(2)
+#plotting(3)

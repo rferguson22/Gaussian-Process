@@ -22,7 +22,9 @@ def GP(x_known, y_known, e_known, x_fit, lengths, batch_size=10000):
         x_batch = x_fit[:, start:end]
 
         K_s = kernel_func(x_known, x_batch, lengths)
-        K_ss_diag = np.diag(kernel_func(x_batch, x_batch, lengths))
+
+        #K_ss_diag = np.full(x_batch.shape[1], lengths[0])
+        K_ss_diag=np.ones(x_batch.shape[1])
 
         mu_s = K_s.T @ alpha
 
@@ -43,8 +45,11 @@ def kernel_func(x1,x2,l):
     Calculates the RBF kernel between 2 sets of points with given length scales for each dimension
     '''
     
-    x1_scaled = x1 / l[:, None]
-    x2_scaled = x2 / l[:, None]
+    #x1_scaled = x1 / l[1:, None]
+    #x2_scaled = x2 / l[1:, None]
+
+    x1_scaled=x1[l:,None]
+    x2_scaled=x2[l:,None]
 
     x1_sq = np.sum(x1_scaled**2, axis=0).reshape(-1, 1)
     x2_sq = np.sum(x2_scaled**2, axis=0).reshape(1, -1)
@@ -52,4 +57,5 @@ def kernel_func(x1,x2,l):
     sq_dist = x1_sq + x2_sq - 2 * np.dot(x1_scaled.T, x2_scaled)
     sq_dist = np.maximum(sq_dist, 0)  
 
-    return np.exp(-0.5 * sq_dist)
+    #return l[0]*np.exp(-0.5 * sq_dist)
+    return np.exp(-0.5*sq_dist)
