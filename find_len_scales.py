@@ -19,26 +19,22 @@ from GP_func import GP
 
 ###################################################################################################
 
-def sigma_check(lengths, x_known, y_known, e_known):
+def sigma_check(lengths, x_known, y_known, e_known,sigma_vals,expected_percents):
 
     '''
     Computes the loss function:
     '''
 
-    if np.any(lengths < 0):
+    if np.any(lengths <= 0):
         return -1e13
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
-
-    sigma_vals = np.linspace(0.001, 3, 1000) 
     
     scaled_e = e_fit[:, None] * sigma_vals[None, :] 
 
     pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
 
     fractions_within = np.mean(np.abs(pulls) <= 1, axis=0)
-
-    expected_percents = sigma_to_percent(sigma_vals)
 
     loss = -np.sum(np.abs(fractions_within - expected_percents))
 
@@ -68,17 +64,27 @@ def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_fil
     original_file_path = Path(out_file_name)
     plotting_path = original_file_path.parent
 
+    #ndim=len(x_known)+1
     ndim=len(x_known)
+
     nwalkers=8*ndim
     max_n=2000*ndim
 
     r_hat_tol=1.18
     tau_tol=0.15
     
-    endpoints=[]
-    for i in range(len(x_known)):
-        diff=(max(x_known[i])-min(x_known[i]))/len(x_known[i].T)
-        endpoints.append([1e-16,10*diff])
+    '''
+    diffs = (x_known.max(axis=1) - x_known.min(axis=1)) / x_known.shape[1]
+    amplitude_bounds = [1e-3, 10] 
+    endpoints = np.column_stack((
+        np.concatenate(([amplitude_bounds[0]], np.full(diffs.shape, 1e-16))),
+        np.concatenate(([amplitude_bounds[1]], 10 * diffs))
+    ))
+    '''
+
+    diff = (np.max(x_known, axis=1) - np.min(x_known, axis=1)) / x_known.shape[1]
+    endpoints = np.column_stack((np.full(x_known.shape[0], 1e-16), 10 * diff))
+
     
     sampling = LHS(xlimits=np.array(endpoints),criterion='center')
     initial_positions = sampling(nwalkers)
@@ -88,7 +94,10 @@ def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_fil
     backend.reset(nwalkers,ndim)
 
     print("Beginning MCMC")
-    
+
+    sigma_vals = np.linspace(0.001, 3, 1000) 
+    expected_percents = sigma_to_percent(sigma_vals)
+
     with multiprocessing.Pool(16) as pool:
 
         index=0
@@ -96,7 +105,8 @@ def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_fil
         r_hat_conv=False
         
         old_tau=np.inf
-        sampler = emcee.EnsembleSampler(nwalkers,ndim,sigma_check,args=(x_known,y_known,e_known),backend=backend,pool=pool)
+        sampler = emcee.EnsembleSampler(nwalkers,ndim,sigma_check,args=(x_known,y_known,e_known,sigma_vals,expected_percents),\
+                                        backend=backend,pool=pool)
         for sample in sampler.sample(initial_positions,iterations=max_n,progress=MC_progress):
             if sampler.iteration%100:
                 continue
@@ -179,7 +189,7 @@ def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_fil
     print(modes)
     
     def func_minimise(lengths):
-        return -sigma_check(lengths,x_known,y_known,e_known)    
+        return -sigma_check(lengths,x_known,y_known,e_known,sigma_vals,expected_percents)    
     
     #bounds=[(1e-16,None) for i in range(ndim)]
 
