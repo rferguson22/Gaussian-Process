@@ -48,8 +48,8 @@ def kernel_func(x1,x2,l):
     #x1_scaled = x1 / l[1:, None]
     #x2_scaled = x2 / l[1:, None]
 
-    x1_scaled=x1[l:,None]
-    x2_scaled=x2[l:,None]
+    x1_scaled=x1/l[:,None]
+    x2_scaled=x2/l[:,None]
 
     x1_sq = np.sum(x1_scaled**2, axis=0).reshape(-1, 1)
     x2_sq = np.sum(x2_scaled**2, axis=0).reshape(1, -1)
