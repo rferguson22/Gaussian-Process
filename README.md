@@ -2,3 +2,4 @@ This branch is currently being used for testing. Please use the master branch to
 
 1. v1 - Original
 2. v2 - Vectorisation of kernel, GP and loss func
+3. v3 - Moving K_ss out of loop 
