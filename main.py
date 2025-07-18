@@ -9,7 +9,7 @@ from GP_func import GP
 ################################################################################
 
 def create_GP():
-    
+
     file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels = read_yaml()
 
     data_list = load_and_validate_all_data(file_paths, resolution, labels)
@@ -41,6 +41,7 @@ def load_and_validate_all_data(file_paths, resolution, labels):
     Reads and validates all files. Ensures structure and dimensionality match.
     Returns a list of (file_path, x, y, e, labels).
     """
+    
     data_list = []
 
     for file_path in file_paths:
