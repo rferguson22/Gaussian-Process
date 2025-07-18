@@ -6,141 +6,174 @@ from find_len_scales import len_scale_opt
 from convex_hull import fill_convex_hull
 from GP_func import GP
 
+################################################################################
+
 def create_GP():
-
-    file_path,resolution,MC_progress,MC_plotting,out_file_name,labels=read_yaml()
     
-    x_known,y_known,e_known,labels=read_data(file_path,labels)
+    file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels = read_yaml()
 
-    
-    if len(resolution)!=len(x_known):
-        issue="Reading in the data at "+file_path+" showed a "+str(len(x_known))+\
-            "D problem but there are "+str(len(resolution))+\
-            " resolution values listed. Please check how many dimensions your problem is."
-        raise ValueError(issue)
+    data_list = load_and_validate_all_data(file_paths, resolution, labels)
 
-    len_scale=len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_file_name)
-    
-    x_fit=fill_convex_hull(x_known.T,resolution)
-    
-    y_fit,e_fit=GP(x_known,y_known,e_known,x_fit.T,len_scale)
+    for file_path, x_known, y_known, e_known, labels_out in data_list:
+        print(f"Processing file: {file_path}")
 
-    output_GP(x_fit,y_fit,e_fit,out_file_name,labels)
+        len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels_out, out_file_name)
 
-    print("Success")
+        x_fit = fill_convex_hull(x_known.T, resolution)
+        y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
 
-    return
+        file_suffix = Path(file_path).stem
+        output_file = Path(out_file_name)
+        if len(file_paths) > 1 or Path(out_file_name).is_dir():
+            output_file = output_file.with_name(f"{output_file.stem}_{file_suffix}{output_file.suffix}")
 
-##############################################################################
+        output_GP(x_fit, y_fit, e_fit, output_file, labels_out)
 
-def generate_labels(num_columns):
+        print(f"Finished processing {file_path}")
 
-    '''
-    Generates default labels for the GP_output file. 
-    '''
+    print("All files processed successfully.")
 
-    labels= [f'dim{i+1}' for i in range(num_columns-2)]
+################################################################################
 
-    labels.extend(['quantity', 'error'])
+def load_and_validate_all_data(file_paths, resolution, labels):
 
-    return labels
+    """
+    Reads and validates all files. Ensures structure and dimensionality match.
+    Returns a list of (file_path, x, y, e, labels).
+    """
+    data_list = []
 
-##############################################################################
+    for file_path in file_paths:
+        try:
+            x_known, y_known, e_known, labels_out = read_data(file_path, labels)
 
-def read_csv(file_path):
+            if len(resolution) != len(x_known):
+                raise ValueError(
+                    f"File '{file_path}' appears to have {len(x_known)} dimensions, "
+                    f"but resolution list has {len(resolution)} elements."
+                )
 
-    '''
-    Reads in csv file, checking if there a header.
-    '''
-    
-    df_no_header = pd.read_csv(file_path, header=None)
-    
-    first_row = df_no_header.iloc[0]
-    
-    if all(isinstance(val, str) for val in first_row):  
-        df = pd.read_csv(file_path) 
-    else:
-        labels=generate_labels(len(df_no_header.columns))
-        df = pd.read_csv(file_path, names=labels)
-    
-    return df
+            data_list.append((file_path, x_known, y_known, e_known, labels_out))
 
-##############################################################################
+        except Exception as e:
+            raise ValueError(f"Failed to load file '{file_path}': {e}")
 
-def read_data(file_path,labels):
+    return data_list
 
-    '''
-    Reads in known datapoints.
-    '''
+################################################################################
 
-    data = read_csv(file_path)
+def validate_and_expand_file_paths(file_entries):
 
-    if labels is None:
-        labels=data.columns
+    """
+    Validates and expands a list of file paths and/or directory paths.
+    """
+    file_paths = []
 
-    if len(labels)!=len(data.columns):
-        issue="Expected "+str(len(data.columns))+ " column names in labels but received "+str(len(labels))
-        raise ValueError(issue)
+    for entry in file_entries:
+        path_obj = Path(entry)
+        if path_obj.is_file():
+            file_paths.append(str(path_obj))
+        elif path_obj.is_dir():
+            files_in_dir = sorted([str(p) for p in path_obj.glob("*") if p.is_file()])
+            if not files_in_dir:
+                raise ValueError(f"The folder '{entry}' is empty or contains no readable files.")
+            file_paths.extend(files_in_dir)
+        else:
+            raise ValueError(f"'{entry}' is not a valid file or directory.")
 
-    x_known=data.iloc[:,:-2].to_numpy().T
-    y_known=data.iloc[:,-2].to_numpy().T
-    e_known=data.iloc[:,-1].to_numpy().T
-    
-    return x_known,y_known,e_known,labels
+    if not file_paths:
+        raise ValueError("No valid input files found. Please check 'file_name' entries.")
 
-##############################################################################
+    return file_paths
+
+################################################################################
 
 def read_yaml():
 
-    with open("options.yaml","r") as file:
-        options=yaml.safe_load(file)
+    with open("options.yaml", "r") as file:
+        options = yaml.safe_load(file)
 
+    file_entries = options["file_name"]
+    resolution = options["resolution"]
+    MC_progress = options.get("MC_progress", False)
+    MC_plotting = options.get("MC_plotting", False)
+    out_file_name = options.get("out_file_name", None)
+    labels = options.get("labels", None)
 
-    file_path=options["file_name"]
-    resolution=options["resolution"]
-    MC_progress=options["MC_progress"]
-    MC_plotting=options["MC_plotting"]
-    out_file_name=options["out_file_name"]
-    labels=options["labels"]
+    if not isinstance(file_entries, list):
+        raise ValueError("Expected 'file_name' to be a list of file paths or folder paths.")
 
+    file_paths = validate_and_expand_file_paths(file_entries)
 
-    file_path_check = Path(file_path)
-
-    if not file_path_check.exists():
-        raise ValueError("The input file does not exist. Please check the file path is correct in options.yaml")
-
-    if not all(isinstance(item, (float,int)) for item in resolution):
-        raise ValueError("The resolution list contains other types besides floats or integers."+\
-                          " Please check that all items are floats or integers.")
-    
-    if MC_progress is None:
-        MC_progress=False
-
-    if MC_plotting is None:
-        MC_plotting=False
+    if not all(isinstance(item, (float, int)) for item in resolution):
+        raise ValueError("All resolution values must be floats or integers.")
 
     if out_file_name is None:
-        original_file_path = Path(file_path)
-        folder_path = original_file_path.parent
-        out_file_name = folder_path / 'GP_results.txt'
+        out_file_name = "GP_results.txt"
 
-    return file_path,resolution,MC_progress,MC_plotting,out_file_name,labels
+    return file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels
 
-##############################################################################
+################################################################################
 
-def output_GP(x_fit,y_fit,e_fit,out_file_name,labels):
+def read_data(file_path, labels):
+    """
+    Reads a single data file and returns x, y, error arrays with validated labels.
+    """
+    data = read_csv(file_path)
 
-    '''
-    Outputs the GP fits
-    '''
+    if labels is None:
+        labels = data.columns
 
-    data=np.vstack([x_fit.T,y_fit.T,e_fit.T])
+    if len(labels) != len(data.columns):
+        raise ValueError(
+            f"Expected {len(data.columns)} column names in labels but received {len(labels)}"
+        )
 
-    df=pd.DataFrame(data.T,columns=labels)
+    if len(data.columns) < 3:
+        raise ValueError(f"File '{file_path}' must have at least 3 columns (features + quantity + error)")
 
-    df.to_csv(out_file_name,index=False)
+    x_known = data.iloc[:, :-2].to_numpy().T
+    y_known = data.iloc[:, -2].to_numpy().T
+    e_known = data.iloc[:, -1].to_numpy().T
 
-    return
+    return x_known, y_known, e_known, labels
+
+################################################################################
+
+def read_csv(file_path):
+    """
+    Reads a CSV or TXT file, detecting whether it has a header.
+    """
+    df_no_header = pd.read_csv(file_path, header=None)
+    first_row = df_no_header.iloc[0]
+
+    if all(isinstance(val, str) for val in first_row):
+        df = pd.read_csv(file_path)  # Assume header present
+    else:
+        labels = generate_labels(len(df_no_header.columns))
+        df = pd.read_csv(file_path, names=labels)
+
+    return df
+
+################################################################################
+
+def generate_labels(num_columns):
+    """
+    Generates default labels for columns: dim1, dim2, ..., quantity, error
+    """
+    labels = [f'dim{i+1}' for i in range(num_columns - 2)]
+    labels.extend(['quantity', 'error'])
+    return labels
+
+################################################################################
+
+def output_GP(x_fit, y_fit, e_fit, out_file_name, labels):
+    """
+    Outputs the GP results to CSV.
+    """
+    data = np.vstack([x_fit.T, y_fit.T, e_fit.T])
+    df = pd.DataFrame(data.T, columns=labels)
+    df.to_csv(out_file_name, index=False)
 
 ################################################################################
 

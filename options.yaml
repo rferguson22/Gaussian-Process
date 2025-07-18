@@ -1,9 +1,9 @@
-#Mandatory
-file_name: "Test_file.txt"
-resolution: [0.01,0.01]
+# Mandatory
+file_name: ["Test_file1.txt", "Test_folder"]
+resolution: [0.01, 0.01]
 
-#Optional
-MC_progress: True
-out_file_name: null
+# Optional
+MC_progress: true
 MC_plotting: null
+out_file_name: null
 labels: null
