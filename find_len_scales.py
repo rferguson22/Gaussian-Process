@@ -9,6 +9,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
 from pathlib import Path
+import os
 
 from scipy.stats import gaussian_kde
 from scipy.signal import find_peaks
@@ -195,6 +196,9 @@ def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_fil
     print(best)
     print("Value of loss function:")
     print(score)
+
+    if os.path.exists(filename):
+        os.remove(filename)
 
     return best
 

@@ -2,36 +2,49 @@ import numpy as np
 import pandas as pd
 import yaml
 from pathlib import Path
+from functools import reduce
 from find_len_scales import len_scale_opt
 from convex_hull import fill_convex_hull
 from GP_func import GP
 
 ################################################################################
 
+
 def create_GP():
 
     file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels = read_yaml()
-
     data_list = load_and_validate_all_data(file_paths, resolution, labels)
 
-    for file_path, x_known, y_known, e_known, labels_out in data_list:
+    experiment_dfs = []
+    num_dims = len(resolution)
+    dim_labels = [f"dim{i+1}" for i in range(num_dims)]
+
+    for file_path, x_known, y_known, e_known, _ in data_list:
         print(f"Processing file: {file_path}")
+        filename = Path(file_path).stem
 
-        len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels_out, out_file_name)
-
+        len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name)
         x_fit = fill_convex_hull(x_known.T, resolution)
         y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
 
-        file_suffix = Path(file_path).stem
-        output_file = Path(out_file_name)
-        if len(file_paths) > 1 or Path(out_file_name).is_dir():
-            output_file = output_file.with_name(f"{output_file.stem}_{file_suffix}{output_file.suffix}")
+        df = pd.DataFrame(x_fit, columns=dim_labels)
+        df[filename] = y_fit.flatten()
+        df[f"{filename}_unc"] = e_fit.flatten()
 
-        output_GP(x_fit, y_fit, e_fit, output_file, labels_out)
+        experiment_dfs.append(df)
 
         print(f"Finished processing {file_path}")
 
-    print("All files processed successfully.")
+    if not experiment_dfs:
+        print("No data processed.")
+        return
+
+    merged_df = reduce(lambda left, right: pd.merge(left, right, on=dim_labels, how="outer"), experiment_dfs)
+    merged_df = merged_df.fillna(float('inf'))
+    merged_df.to_csv(out_file_name, index=False)
+    print(f"Combined results written to {out_file_name}")
+
+    return
 
 ################################################################################
 
@@ -41,7 +54,7 @@ def load_and_validate_all_data(file_paths, resolution, labels):
     Reads and validates all files. Ensures structure and dimensionality match.
     Returns a list of (file_path, x, y, e, labels).
     """
-    
+
     data_list = []
 
     for file_path in file_paths:
