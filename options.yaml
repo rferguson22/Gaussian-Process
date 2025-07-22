@@ -6,4 +6,4 @@ resolution: [0.01, 0.01]
 MC_progress: true
 MC_plotting: null
 out_file_name: null
-labels: null
+labels: ["Plab","cosTheta","w"]
