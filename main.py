@@ -11,12 +11,11 @@ from GP_func import GP
 
 def create_GP():
 
-    file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels = read_yaml()
-    data_list = check_data(file_paths, resolution, labels)
+    resolution, MC_progress, MC_plotting, out_file_name, labels, data_list = read_yaml()
 
     experiment_dfs = []
     num_dims = len(resolution)
-    dim_labels = [f"dim{i+1}" for i in range(num_dims)]
+    dim_labels = labels[:num_dims]
 
     total_files = len(data_list)
 
@@ -39,8 +38,12 @@ def create_GP():
 
             df = pd.DataFrame(x_fit, columns=dim_labels)
 
-            quant_col = f"{filename}_exp{idx+1}"
-            err_col = f"{filename}_unc{idx+1}"
+            if total_experiments == 1:
+                quant_col = f"{filename}"
+                err_col = f"{filename}_unc"
+            else:
+                quant_col = f"{filename}_exp{idx+1}"
+                err_col = f"{filename}_unc{idx+1}"
 
             df[quant_col] = y_fit.flatten()
             df[err_col] = e_fit.flatten()
@@ -58,17 +61,9 @@ def create_GP():
     merged_df.to_csv(out_file_name, index=False)
     print(f"Combined results written to {out_file_name}")
 
-
-    return
-
 ################################################################################
 
 def check_data(file_paths, resolution, labels):
-    """
-    Reads and validates all files. Ensures structure and dimensionality match.
-    Returns a list of (file_path, x_known_list, exp_pairs, labels).
-    """
-
     data_list = []
 
     for file_path in file_paths:
@@ -88,16 +83,11 @@ def check_data(file_paths, resolution, labels):
             raise ValueError(f"Failed to load file '{file_path}': {e}")
 
     print("All datafile paths are readable.")
-
     return data_list
 
 ################################################################################
 
 def expand_file_paths(file_entries):
-
-    """
-    Validates and expands a list of file paths and/or directory paths.
-    """
     file_paths = []
 
     for entry in file_entries:
@@ -116,6 +106,57 @@ def expand_file_paths(file_entries):
         raise ValueError("No valid input files found. Please check 'file_name' entries.")
 
     return file_paths
+
+################################################################################
+
+def file_has_header(file_path):
+    df_first_row = pd.read_csv(file_path, nrows=1, header=None)
+    first_row = df_first_row.iloc[0]
+
+    for val in first_row:
+        try:
+            float(val)
+        except (ValueError, TypeError):
+            return True
+
+    return False
+
+################################################################################
+
+def get_consistent_kinetic_labels(file_paths, num_kin_dims):
+    header_labels_raw_list = []
+    header_labels_norm_list = []
+
+    for file_path in file_paths:
+        try:
+            if file_has_header(file_path):
+                df = pd.read_csv(file_path, nrows=0, header=0)
+                header_labels = list(df.columns)
+            else:
+                continue
+        except Exception:
+            continue
+
+        if len(header_labels) < num_kin_dims:
+            print(f"  File '{file_path}' has insufficient header columns ({len(header_labels)}), skipping.")
+            continue
+
+        norm_labels = [label.strip().lower() for label in header_labels[:num_kin_dims]]
+        header_labels_raw_list.append(header_labels[:num_kin_dims])
+        header_labels_norm_list.append(norm_labels)
+
+    if not header_labels_norm_list:
+        return None
+
+    first_norm_labels = header_labels_norm_list[0]
+    first_raw_labels = header_labels_raw_list[0]
+
+    for norm_labels in header_labels_norm_list[1:]:
+        if norm_labels != first_norm_labels:
+            print("Warning: File header labels are inconsistent across files.")
+            return None
+
+    return first_raw_labels
 
 ################################################################################
 
@@ -142,114 +183,77 @@ def read_yaml():
     if out_file_name is None:
         out_file_name = "GP_results.txt"
 
-    if labels is None:
-        num_kin_dims = len(resolution)
-        labels = [f"dim{i+1}" for i in range(num_kin_dims)]
-        labels += ["quantity", "error"]
+    num_kin_dims = len(resolution)
+    data_list = check_data(file_paths, resolution, labels)
 
-    return file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels
+    if labels is not None:
+        if len(labels) == num_kin_dims:
+            kin_labels = labels
+            print(f"Using kinetic dimension labels from options.yaml: {kin_labels}")
+        else:
+            kin_labels = [f"dim{i+1}" for i in range(num_kin_dims)]
+            print(f"Warning: The number of kinetic dimension labels ({len(labels)}) does not match the expected number "
+                  f"({num_kin_dims}). Using generic kinetic dimension labels instead: {kin_labels}")
+    else:
+        header_labels = get_consistent_kinetic_labels(file_paths, num_kin_dims)
+        if header_labels is not None:
+            kin_labels = header_labels
+            print(f"Using kinetic dimension labels from file headers: {kin_labels}")
+        else:
+            kin_labels = [f"dim{i+1}" for i in range(num_kin_dims)]
+            print(f"Using generic kinetic dimension labels: {kin_labels}")
+
+    # Always append 'quantity' and 'error' labels after kinetic dimension labels
+    labels = kin_labels + ["quantity", "error"]
+
+    return resolution, MC_progress, MC_plotting, out_file_name, labels, data_list
 
 
 ################################################################################
 
 def read_data(file_path, labels, resolution):
-    """
-    Reads a single data file and returns:
-    - x_known_list: list of kinetic dims arrays filtered per experiment
-    - exp_pairs: list of (y_known, e_known) arrays filtered per experiment
-    - labels_out: labels used in the file
-
-    Assumes first len(resolution) columns are kinetic dims.
-    """
 
     data = read_csv(file_path)
-
-    num_dims = len(resolution) 
-
+    num_dims = len(resolution)
     num_cols = data.shape[1]
     num_exp_columns = num_cols - num_dims
+
     if num_exp_columns % 2 != 0:
-        raise ValueError(
-            f"Data file '{file_path}' has {num_exp_columns} columns after kinetic dims; "
-            "expected an even number (pairs of quantity and error columns)."
-        )
+        raise ValueError(f"File '{file_path}' must have pairs of columns for quantity and error after kinetic dims.")
 
     num_experiments = num_exp_columns // 2
-
-    x_all = data.iloc[:, :num_dims].to_numpy()
-
     x_known_list = []
     exp_pairs = []
+    data_np = data.values
 
-    for i in range(num_experiments):
-        y_known_full = data.iloc[:, num_dims + 2*i].to_numpy()
-        e_known_full = data.iloc[:, num_dims + 2*i + 1].to_numpy()
+    for exp_idx in range(num_experiments):
+        y_col = num_dims + 2 * exp_idx
+        e_col = y_col + 1
 
-        valid_mask = np.isfinite(y_known_full)
+        y_known = data_np[:, y_col]
+        e_known = data_np[:, e_col]
+        x_known = data_np[:, :num_dims].T
 
-        x_known = x_all[valid_mask].T
-        y_known = y_known_full[valid_mask]
-        e_known = e_known_full[valid_mask]
+        valid_mask = np.isfinite(y_known) & np.isfinite(e_known)
+        x_known_valid = x_known[:, valid_mask]
+        y_known_valid = y_known[valid_mask]
+        e_known_valid = e_known[valid_mask]
 
-        x_known_list.append(x_known)
-        exp_pairs.append((y_known, e_known))
+        x_known_list.append(x_known_valid)
+        exp_pairs.append((y_known_valid, e_known_valid))
 
-    
     return x_known_list, exp_pairs, labels
-
 
 ################################################################################
 
 def read_csv(file_path):
-
-    """
-    Reads a csv or txt file, detecting whether it has a header.
-    """
-    df_no_header = pd.read_csv(file_path, header=None)
-    first_row = df_no_header.iloc[0]
-
-    if all(isinstance(val, str) for val in first_row):
-        df = pd.read_csv(file_path)  # Assume header present
+    if file_has_header(file_path):
+        df = pd.read_csv(file_path, header=0)
     else:
-        labels = generate_labels(len(df_no_header.columns), Path(file_path).stem)
-        df = pd.read_csv(file_path, names=labels)
-
+        df = pd.read_csv(file_path, header=None)
     return df
 
 ################################################################################
 
-def generate_labels(num_columns, filename="file"):
-
-    """
-    Generates default labels: dim1, dim2, ..., quant1, err1, quant2, err2, ...
-    """
-    num_dims = num_columns - 2
-    if num_dims < 1:
-        raise ValueError("Insufficient columns to generate labels.")
-    
-    labels = [f'dim{i+1}' for i in range(num_dims)]
-    num_remaining = num_columns - num_dims
-
-    for i in range(num_remaining // 2):
-        labels.append(f'{filename}_quant{i+1}')
-        labels.append(f'{filename}_err{i+1}')
-
-    return labels
-
-################################################################################
-
-def output_GP(x_fit, y_fit, e_fit, out_file_name, labels):
-
-    """
-    Outputs the GP results to CSV.
-    """
-    data = np.vstack([x_fit.T, y_fit.T, e_fit.T])
-    df = pd.DataFrame(data.T, columns=labels)
-    df.to_csv(out_file_name, index=False)
-
-################################################################################
-
-create_GP()
-
-
-
+if __name__ == "__main__":
+    create_GP()
