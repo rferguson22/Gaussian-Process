@@ -2,10 +2,8 @@ numpy
 pandas
 smt
 emcee
-multiprocessing
 corner
 scikit-learn
 matplotlib
 scipy
-yaml
-pathlib
+PyYAML
