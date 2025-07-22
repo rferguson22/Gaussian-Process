@@ -20,6 +20,17 @@ See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse
 
 ---
 
+## Optional Parameters in `options.yaml`
+
+| Parameter        | Type            | Description                                                                                                             | Default                          |
+|------------------|-----------------|-------------------------------------------------------------------------------------------------------------------------|----------------------------------|
+| `MC_progress`    | Boolean         | Whether to display the MCMC progress.                                                                                   | `False`                          |
+| `out_file_name`  | String          | File path and filename for output GP results.                                                                           | `"GP_results.txt"` (same folder) |
+| `MC_plotting`    | Boolean         | Whether to plot and save MCMC corner plots, KDE peaks, and silhouette scores.                                           | `False`                          |
+| `labels`         | List of Strings | Labels for the Kinematic Dimension columns in the output file. Uses input file labels if available, or generic labels (`dim1`, `dim2`, etc.) if not. See the **Output Labels** section below for full details. | *Input-based or generic*         |
+
+---
+
 ## Output Labels
 
 Labels for columns inside the single combined output file are constructed as follows:
@@ -50,17 +61,6 @@ Labels for columns inside the single combined output file are constructed as fol
 - There is a **single combined output file** containing all input data and experiments.
 - Its name defaults to the `out_file_name` parameter in `options.yaml` (default `"GP_results.txt"`).
 - This file contains columns as described above, combining all kinematic dims and all experiments from all input files.
-
----
-
-## Optional Parameters in `options.yaml`
-
-| Parameter        | Type            | Description                                                                                         | Default                          |
-|------------------|-----------------|-----------------------------------------------------------------------------------------------------|----------------------------------|
-| `MC_progress`    | Boolean         | Whether to display the MCMC progress.                                                              | `False`                          |
-| `out_file_name`  | String          | File path and filename for output GP results.                                                      | `"GP_results.txt"` (same folder) |
-| `MC_plotting`    | Boolean         | Whether to plot and save MCMC corner plots, KDE peaks, and silhouette scores.                      | `False`                          |
-| `labels`         | List of Strings | Labels for columns in the output file. Uses input file labels if available, or generic ones (`dim1`, `dim2`, ..., `quantity`, `error`). | *Input-based or generic*         |
 
 ---
 
