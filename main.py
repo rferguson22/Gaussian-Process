@@ -9,7 +9,6 @@ from GP_func import GP
 
 ################################################################################
 
-
 def create_GP():
 
     file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels = read_yaml()
@@ -19,21 +18,36 @@ def create_GP():
     num_dims = len(resolution)
     dim_labels = [f"dim{i+1}" for i in range(num_dims)]
 
-    for file_path, x_known, y_known, e_known, _ in data_list:
-        print(f"Processing file: {file_path}")
+    total_files = len(data_list)
+
+    for file_idx, (file_path, x_known_list, exp_pairs, labels_out) in enumerate(data_list, start=1):
         filename = Path(file_path).stem
+        print(f"Processing file {file_idx}/{total_files}: {filename}")
 
-        len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name)
-        x_fit = fill_convex_hull(x_known.T, resolution)
-        y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
+        total_experiments = len(x_known_list)
 
-        df = pd.DataFrame(x_fit, columns=dim_labels)
-        df[filename] = y_fit.flatten()
-        df[f"{filename}_unc"] = e_fit.flatten()
+        for idx, (x_known, (y_known, e_known)) in enumerate(zip(x_known_list, exp_pairs)):
+            print(f"  Doing experiment {idx+1}/{total_experiments} fits from file {filename}")
 
-        experiment_dfs.append(df)
+            if x_known.shape[1] == 0:
+                print(f"  Skipping experiment {idx+1}: no valid data points.")
+                continue
 
-        print(f"Finished processing {file_path}")
+            len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels_out, out_file_name)
+            x_fit = fill_convex_hull(x_known.T, resolution)
+            y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
+
+            df = pd.DataFrame(x_fit, columns=dim_labels)
+
+            quant_col = f"{filename}_exp{idx+1}"
+            err_col = f"{filename}_unc{idx+1}"
+
+            df[quant_col] = y_fit.flatten()
+            df[err_col] = e_fit.flatten()
+
+            experiment_dfs.append(df)
+
+        print(f"Finished processing {filename}")
 
     if not experiment_dfs:
         print("No data processed.")
@@ -44,34 +58,35 @@ def create_GP():
     merged_df.to_csv(out_file_name, index=False)
     print(f"Combined results written to {out_file_name}")
 
+
     return
 
 ################################################################################
 
 def check_data(file_paths, resolution, labels):
-
     """
     Reads and validates all files. Ensures structure and dimensionality match.
-    Returns a list of (file_path, x, y, e, labels).
+    Returns a list of (file_path, x_known_list, exp_pairs, labels).
     """
 
     data_list = []
 
     for file_path in file_paths:
         try:
-            x_known, y_known, e_known, labels_out = read_data(file_path, labels)
+            x_known_list, exp_pairs, labels_out = read_data(file_path, labels, resolution)
 
-            if len(resolution) != len(x_known):
-                raise ValueError(
-                    f"File '{file_path}' appears to have {len(x_known)} dimensions, "
-                    f"but resolution list has {len(resolution)} elements."
-                )
+            for x_known in x_known_list:
+                if len(resolution) != x_known.shape[0]:
+                    raise ValueError(
+                        f"File '{file_path}' appears to have kinetic dimension {x_known.shape[0]}, "
+                        f"but resolution list has {len(resolution)} elements."
+                    )
 
-            data_list.append((file_path, x_known, y_known, e_known, labels_out))
+            data_list.append((file_path, x_known_list, exp_pairs, labels_out))
 
         except Exception as e:
             raise ValueError(f"Failed to load file '{file_path}': {e}")
-        
+
     print("All datafile paths are readable.")
 
     return data_list
@@ -127,38 +142,68 @@ def read_yaml():
     if out_file_name is None:
         out_file_name = "GP_results.txt"
 
+    if labels is None:
+        num_kin_dims = len(resolution)
+        labels = [f"dim{i+1}" for i in range(num_kin_dims)]
+        labels += ["quantity", "error"]
+
     return file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels
+
 
 ################################################################################
 
-def read_data(file_path, labels):
+def read_data(file_path, labels, resolution):
     """
-    Reads a single data file and returns x, y, error arrays with validated labels.
+    Reads a single data file and returns:
+    - x_known_list: list of kinetic dims arrays filtered per experiment
+    - exp_pairs: list of (y_known, e_known) arrays filtered per experiment
+    - labels_out: labels used in the file
+
+    Assumes first len(resolution) columns are kinetic dims.
     """
+
     data = read_csv(file_path)
 
-    if labels is None:
-        labels = data.columns
+    num_dims = len(resolution) 
 
-    if len(labels) != len(data.columns):
+    num_cols = data.shape[1]
+    num_exp_columns = num_cols - num_dims
+    if num_exp_columns % 2 != 0:
         raise ValueError(
-            f"Expected {len(data.columns)} column names in labels but received {len(labels)}"
+            f"Data file '{file_path}' has {num_exp_columns} columns after kinetic dims; "
+            "expected an even number (pairs of quantity and error columns)."
         )
 
-    if len(data.columns) < 3:
-        raise ValueError(f"File '{file_path}' must have at least 3 columns (features + quantity + error)")
+    num_experiments = num_exp_columns // 2
 
-    x_known = data.iloc[:, :-2].to_numpy().T
-    y_known = data.iloc[:, -2].to_numpy().T
-    e_known = data.iloc[:, -1].to_numpy().T
+    x_all = data.iloc[:, :num_dims].to_numpy()
 
-    return x_known, y_known, e_known, labels
+    x_known_list = []
+    exp_pairs = []
+
+    for i in range(num_experiments):
+        y_known_full = data.iloc[:, num_dims + 2*i].to_numpy()
+        e_known_full = data.iloc[:, num_dims + 2*i + 1].to_numpy()
+
+        valid_mask = np.isfinite(y_known_full)
+
+        x_known = x_all[valid_mask].T
+        y_known = y_known_full[valid_mask]
+        e_known = e_known_full[valid_mask]
+
+        x_known_list.append(x_known)
+        exp_pairs.append((y_known, e_known))
+
+    
+    return x_known_list, exp_pairs, labels
+
 
 ################################################################################
 
 def read_csv(file_path):
+
     """
-    Reads a CSV or TXT file, detecting whether it has a header.
+    Reads a csv or txt file, detecting whether it has a header.
     """
     df_no_header = pd.read_csv(file_path, header=None)
     first_row = df_no_header.iloc[0]
@@ -166,24 +211,35 @@ def read_csv(file_path):
     if all(isinstance(val, str) for val in first_row):
         df = pd.read_csv(file_path)  # Assume header present
     else:
-        labels = generate_labels(len(df_no_header.columns))
+        labels = generate_labels(len(df_no_header.columns), Path(file_path).stem)
         df = pd.read_csv(file_path, names=labels)
 
     return df
 
 ################################################################################
 
-def generate_labels(num_columns):
+def generate_labels(num_columns, filename="file"):
+
     """
-    Generates default labels for columns: dim1, dim2, ..., quantity, error
+    Generates default labels: dim1, dim2, ..., quant1, err1, quant2, err2, ...
     """
-    labels = [f'dim{i+1}' for i in range(num_columns - 2)]
-    labels.extend(['quantity', 'error'])
+    num_dims = num_columns - 2
+    if num_dims < 1:
+        raise ValueError("Insufficient columns to generate labels.")
+    
+    labels = [f'dim{i+1}' for i in range(num_dims)]
+    num_remaining = num_columns - num_dims
+
+    for i in range(num_remaining // 2):
+        labels.append(f'{filename}_quant{i+1}')
+        labels.append(f'{filename}_err{i+1}')
+
     return labels
 
 ################################################################################
 
 def output_GP(x_fit, y_fit, e_fit, out_file_name, labels):
+
     """
     Outputs the GP results to CSV.
     """
@@ -194,5 +250,6 @@ def output_GP(x_fit, y_fit, e_fit, out_file_name, labels):
 ################################################################################
 
 create_GP()
+
 
 
