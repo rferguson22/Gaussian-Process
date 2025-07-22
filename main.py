@@ -13,7 +13,7 @@ from GP_func import GP
 def create_GP():
 
     file_paths, resolution, MC_progress, MC_plotting, out_file_name, labels = read_yaml()
-    data_list = load_and_validate_all_data(file_paths, resolution, labels)
+    data_list = check_data(file_paths, resolution, labels)
 
     experiment_dfs = []
     num_dims = len(resolution)
@@ -48,7 +48,7 @@ def create_GP():
 
 ################################################################################
 
-def load_and_validate_all_data(file_paths, resolution, labels):
+def check_data(file_paths, resolution, labels):
 
     """
     Reads and validates all files. Ensures structure and dimensionality match.
@@ -71,12 +71,14 @@ def load_and_validate_all_data(file_paths, resolution, labels):
 
         except Exception as e:
             raise ValueError(f"Failed to load file '{file_path}': {e}")
+        
+    print("All datafile paths are readable.")
 
     return data_list
 
 ################################################################################
 
-def validate_and_expand_file_paths(file_entries):
+def expand_file_paths(file_entries):
 
     """
     Validates and expands a list of file paths and/or directory paths.
@@ -117,7 +119,7 @@ def read_yaml():
     if not isinstance(file_entries, list):
         raise ValueError("Expected 'file_name' to be a list of file paths or folder paths.")
 
-    file_paths = validate_and_expand_file_paths(file_entries)
+    file_paths = expand_file_paths(file_entries)
 
     if not all(isinstance(item, (float, int)) for item in resolution):
         raise ValueError("All resolution values must be floats or integers.")
