@@ -5,17 +5,51 @@ See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse
 
 
 ---
+## Input Data Assumptions
 
-## File Formatting Assumptions
+- The number of kinematic dimensions `n` is determined by the length of the `resolution` list in `options.yaml`.
+- Input can be provided as:
+  - One or more individual input files, and/or
+  - One or more folder paths containing input files.
+- The program collects and processes all input files from the specified files and folders together.
+- Each input file must have exactly `n + 2 * e` columns, where:
+  - `n` columns are kinematic inputs,
+  - `e` is the number of experiments,
+  - Each experiment has two columns: quantity and error.
+- The code validates that `(total_columns - n)` is even to confirm proper experiment pairing.
 
-For an **n-dimensional** problem, the input file must contain **n + 2 columns**:
+---
 
-1. First `n` columns: Input kinematic variables  
-2. The `(n+1)`th column: Physics quantity of interest  
-3. The `(n+2)`th column: Associated error of the physics quantity
+## Output Labels
 
-The `options.yaml` file must also contain a list named `resolution` with **n** floats or integers for an **n-dimensional** problem.
+Labels for columns inside the single combined output file are constructed as follows:
 
+1. The kinematic dimension labels come first:
+   - From `labels` in `options.yaml` if provided and length matches kinematic dims.
+   - Otherwise, from matching input file headers if available.
+   - Otherwise, generic labels: `dim1, dim2, ..., dimN`.
+
+2. Followed by pairs of experiment labels for **each experiment in each input file**, derived from the input filename:  
+
+   - If an input file has only **one experiment**, columns are labeled:  
+     ```
+     filename, filename_unc
+     ```
+
+   - If an input file has **multiple experiments** (`e > 1`), columns are labeled:  
+     ```
+     filename_exp1, filename_unc1, filename_exp2, filename_unc2, ...
+     ```
+
+3. Columns from multiple input files are concatenated in the output file in the order the files are provided.
+
+---
+
+## Output File Naming
+
+- There is a **single combined output file** containing all input data and experiments.
+- Its name defaults to the `out_file_name` parameter in `options.yaml` (default `"GP_results.txt"`).
+- This file contains columns as described above, combining all kinematic dims and all experiments from all input files.
 
 ---
 
