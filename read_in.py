@@ -139,8 +139,8 @@ def read_yaml():
     out_file_name = options.get("out_file_name", None)
     labels = options.get("labels", None)
 
-    write_individual_files = options.get("write_individual_files", False)
-    group_experiments_per_file = options.get("group_experiments_per_file", False)
+    ind_output = options.get("write_individual_files", False)
+    group_exp = options.get("group_experiments_per_file", False)
 
     if not isinstance(file_entries, list):
         raise ValueError("Expected 'file_name' to be a list of file paths or folder paths.")
@@ -155,14 +155,14 @@ def read_yaml():
 
     out_path = Path(out_file_name)
 
-    if write_individual_files:
+    if ind_output:
         if not out_path.exists():
             print(f"Output folder '{out_path}' does not exist — creating it.")
             out_path.mkdir(parents=True, exist_ok=True)
         elif out_path.is_file():
             print(f"Warning: Individual file output requested, but out_file_name points to a file."
                    "Will write a single combined output file: {out_file_name}")
-            write_individual_files = False 
+            ind_output = False 
     else:
         if out_path.is_dir():
             out_file_name = str(out_path / "GP_results.txt")
@@ -170,7 +170,6 @@ def read_yaml():
     num_kin_dims = len(resolution)
     data_list = check_data(file_paths, resolution, labels)
 
-    # Determine labels
     if labels is not None:
         if len(labels) == num_kin_dims:
             kin_labels = labels
@@ -190,16 +189,7 @@ def read_yaml():
 
     labels = kin_labels + ["quantity", "error"]
 
-    return (
-        resolution,
-        MC_progress,
-        MC_plotting,
-        str(out_file_name),
-        labels,
-        data_list,
-        write_individual_files,
-        group_experiments_per_file
-    )
+    return resolution,MC_progress,MC_plotting,str(out_file_name),labels,data_list,ind_output,group_exp
 
 ##########################################################################################################################
 
@@ -215,7 +205,7 @@ def read_data(file_path, labels, resolution):
     num_exp_columns = num_cols - num_dims
 
     if num_exp_columns % 2 != 0:
-        raise ValueError(f"File '{file_path}' must have pairs of columns for quantity and error after kinematic dims.")
+        raise ValueError(f"File '{file_path}' must have pairs of columns for quantity and error after kinematic dimensions.")
 
     num_experiments = num_exp_columns // 2
     x_known_list = []
@@ -252,4 +242,5 @@ def read_csv(file_path):
         df = pd.read_csv(file_path, header=0)
     else:
         df = pd.read_csv(file_path, header=None)
+        
     return df
