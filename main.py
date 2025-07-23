@@ -43,7 +43,7 @@ def process_experiment(x_known, y_known, e_known, resolution, dim_labels, filena
 def write_individual_file(df, filename, out_path, total_exps, exp_idx):
 
     """
-    Write a single experiment DataFrame to a CSV file with the correct experiment index.
+    Write a single experiment DataFrame to a csv file with the correct experiment index.
     """
 
     output_folder = out_path if out_path.is_dir() else out_path.parent
@@ -82,7 +82,7 @@ def write_grouped_file(file_dfs, filename, out_path, dim_labels):
 def write_combined_file(experiment_dfs, out_path, dim_labels):
 
     """
-    Merge all experiment DataFrames and write a single combined output CSV file.
+    Merge all experiment DataFrames and write a single combined output csv file.
     """
 
     if str(out_path).endswith("/"):
@@ -148,7 +148,7 @@ def create_GP():
             write_grouped_file(file_dfs, filename, out_path, dim_labels)
 
     if not write_ind and experiment_dfs:
-        write_combined_file(experiment_dfs, out_path, dim_labels)
+        return write_combined_file(experiment_dfs, out_path, dim_labels)
 
     if experiment_dfs:
         merged_df = reduce(lambda left, right: pd.merge(left, right, on=dim_labels, how="outer"), experiment_dfs).fillna(float('inf'))
