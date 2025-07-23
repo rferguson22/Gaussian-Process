@@ -3,11 +3,11 @@
 This Python script generates a **Gaussian Process (GP)** using **Markov Chain Monte Carlo (MCMC)** to optimise the length scale from a novel loss function.  
 See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse Data*](https://arxiv.org/abs/2505.01473).
 
-
 ---
+
 ## Input Data Assumptions
 
-- The number of kinematic dimensions `n` is determined by the length of the `resolution` list in `options.yaml`.
+- The number of kinematic dimensions `n` is **assumed to be the length of the `resolution` list** in `options.yaml`.
 - Input can be provided as:
   - One or more individual input files, and/or
   - One or more folder paths containing input files.
@@ -17,6 +17,8 @@ See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse
   - `e` is the number of experiments,
   - Each experiment has two columns: quantity and error.
 - The code validates that `(total_columns - n)` is even to confirm proper experiment pairing.
+- If an input file contains multiple experiments, and a particular experiment does **not** include a measurement for a given kinematic point, use `inf` as a placeholder in both the `quantity` and `error` columns for that experiment.
+
 
 ---
 
@@ -43,14 +45,10 @@ Labels for columns inside the single combined output file are constructed as fol
 2. Followed by pairs of experiment labels for **each experiment in each input file**, derived from the input filename:  
 
    - If an input file has only **one experiment**, columns are labeled:  
-     ```
      filename, filename_unc
-     ```
 
    - If an input file has **multiple experiments** (`e > 1`), columns are labeled:  
-     ```
      filename_exp1, filename_unc1, filename_exp2, filename_unc2, ...
-     ```
 
 3. Columns from multiple input files are concatenated in the output file in the order the files are provided.
 
