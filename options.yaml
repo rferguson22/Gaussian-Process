@@ -6,6 +6,6 @@ resolution: [0.01, 0.01]
 MC_progress: true
 MC_plotting: null
 out_file_name: "output_folder"
-labels: ["Plab", "cosTheta", "w"]
+labels: ["Plab", "cosTheta",]
 write_individual_files: true
-group_experiments_per_file: true
+group_experiments_per_file: false

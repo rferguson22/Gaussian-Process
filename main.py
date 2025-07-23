@@ -95,11 +95,10 @@ def group_exps_output(experiment_dfs, out_folder, dim_labels):
 ################################################################################
 
 def create_GP():
-
     """
-    Main routine to read experiment configuration, perform Gaussian Process fitting, and write results to output files.
+    Main routine to read experiment configuration, perform Gaussian Process fitting,
+    and write results to output files.
     """
-
 
     resolution, MC_progress, MC_plotting, out_file_name, labels, data_list, write_ind, group_exps = read_yaml()
 
@@ -110,18 +109,35 @@ def create_GP():
     out_path = Path(out_file_name) if out_file_name else Path("GP_results.txt")
 
     if write_ind:
+        print("Writing individual output files")
+        if group_exps:
+            print("Writing experiments from the same file together")
+        else:
+            print("Writing experiments from the same file separately")
+
         output_folder = out_path
         if not output_folder.exists():
             print(f"Creating output folder: {output_folder}")
             output_folder.mkdir(parents=True, exist_ok=True)
-        print(f"Writing individual output files to: {output_folder}")
+        print(f"Output folder: {output_folder}")
+
     else:
-        if out_path.is_dir() or str(out_path).endswith("/"):
-            out_path.mkdir(parents=True, exist_ok=True)
-            combined_output_file = out_path / "GP_results.txt"
+        print("Writing combined output file")
+
+        if str(out_path).endswith("/"):
+            output_folder = out_path
+            if not output_folder.exists():
+                print(f"Creating output folder: {output_folder}")
+                output_folder.mkdir(parents=True, exist_ok=True)
+            combined_output_file = output_folder / "GP_results.txt"
         else:
             combined_output_file = out_path
-        print(f"Writing combined output file to: {combined_output_file}")
+            output_folder = combined_output_file.parent
+            if not output_folder.exists():
+                print(f"Creating output folder: {output_folder}")
+                output_folder.mkdir(parents=True, exist_ok=True)
+
+        print(f"Output file: {combined_output_file}")
 
     for file_idx, (file_path, x_known_list, exp_pairs, labels_out) in enumerate(data_list, start=1):
         filename = Path(file_path).stem
@@ -161,7 +177,10 @@ def create_GP():
                 merged.to_csv(output_path, index=False)
             else:
                 for i, df in enumerate(file_dfs):
-                    output_path = output_folder / f"{filename}_exp{i+1}_GP_results.txt"
+                    if total_experiments == 1:
+                        output_path = output_folder / f"{filename}_GP_results.txt"
+                    else:
+                        output_path = output_folder / f"{filename}_exp{i+1}_GP_results.txt"
                     df.to_csv(output_path, index=False)
 
         print(f"Finished processing {filename}")
