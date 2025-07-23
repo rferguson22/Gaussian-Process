@@ -56,9 +56,11 @@ Labels for columns inside the single combined output file are constructed as fol
 
 ## Output File Naming
 
-- There is a **single combined output file** containing all input data and experiments.
-- Its name defaults to the `out_file_name` parameter in `options.yaml` (default `"GP_results.txt"`).
-- This file contains columns as described above, combining all kinematic dims and all experiments from all input files.
+- There is a **single combined output file** that aggregates all input data and experiment results.
+- The filename is determined by the `out_file_name` parameter in `options.yaml`.  
+  If not specified, it defaults to `"GP_results.txt"` and is saved in the same folder as the input.
+- The file contains all kinematic dimension columns followed by experiment columns from all input files, labeled as described in the **Output Labels** section.
+- If a particular experiment does **not** include a measurement at a given kinematic point, the corresponding quantity and error values in the output will be set to `inf` as a placeholder — mirroring the input file format.
 
 ---
 
