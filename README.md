@@ -51,7 +51,7 @@ See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse
   - If `group_experiments_per_file: true`, one output per file: `filename_GP_results.txt`
   - If `false`, one per experiment: `filename_exp1_GP_results.txt`, etc.
 
-In all modes, missing measurements in any experiment are filled with `inf`.
+In all cases, missing measurements in any experiment are filled with `inf`.
 
 ---
 
