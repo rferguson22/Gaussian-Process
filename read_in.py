@@ -124,7 +124,7 @@ def check_data(file_paths, resolution, labels):
 ############################################################################################################################
 
 def read_yaml():
-
+    
     """
     Parses options.yaml and prepares input settings, file paths, and data for processing.
     """
@@ -139,6 +139,10 @@ def read_yaml():
     out_file_name = options.get("out_file_name", None)
     labels = options.get("labels", None)
 
+    # New options
+    write_individual_files = options.get("write_individual_files", False)
+    group_experiments_per_file = options.get("group_experiments_per_file", False)
+
     if not isinstance(file_entries, list):
         raise ValueError("Expected 'file_name' to be a list of file paths or folder paths.")
 
@@ -147,12 +151,27 @@ def read_yaml():
     if not all(isinstance(item, (float, int)) for item in resolution):
         raise ValueError("All resolution values must be floats or integers.")
 
+    # Determine output file or folder behavior
     if out_file_name is None:
         out_file_name = "GP_results.txt"
+
+    out_path = Path(out_file_name)
+
+    if write_individual_files:
+        if not out_path.exists():
+            print(f"Output folder '{out_path}' does not exist — creating it.")
+            out_path.mkdir(parents=True, exist_ok=True)
+        elif out_path.is_file():
+            print(f"Warning: Individual file output requested, but out_file_name points to a file. Will write a single combined output file: {out_file_name}")
+            write_individual_files = False  # fallback to single file
+    else:
+        if out_path.is_dir():
+            out_file_name = str(out_path / "GP_results.txt")
 
     num_kin_dims = len(resolution)
     data_list = check_data(file_paths, resolution, labels)
 
+    # Determine labels
     if labels is not None:
         if len(labels) == num_kin_dims:
             kin_labels = labels
@@ -162,9 +181,9 @@ def read_yaml():
             print(f"Warning: The number of kinetic dimension labels ({len(labels)}) does not match the expected number "
                   f"({num_kin_dims}). Using generic kinetic dimension labels instead: {kin_labels}")
     else:
-        header_labels = header_labels(file_paths, num_kin_dims)
-        if header_labels is not None:
-            kin_labels = header_labels
+        inferred_headers = header_labels(file_paths, num_kin_dims)
+        if inferred_headers is not None:
+            kin_labels = inferred_headers
             print(f"Using kinetic dimension labels from file headers: {kin_labels}")
         else:
             kin_labels = [f"dim{i+1}" for i in range(num_kin_dims)]
@@ -172,7 +191,16 @@ def read_yaml():
 
     labels = kin_labels + ["quantity", "error"]
 
-    return resolution, MC_progress, MC_plotting, out_file_name, labels, data_list
+    return (
+        resolution,
+        MC_progress,
+        MC_plotting,
+        str(out_file_name),
+        labels,
+        data_list,
+        write_individual_files,
+        group_experiments_per_file
+    )
 
 ##########################################################################################################################
 

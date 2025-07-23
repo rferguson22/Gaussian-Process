@@ -1,9 +1,11 @@
 # Mandatory
-file_name: ["Test_file1.txt","Test_folder"]
+file_name: ["Test_file1.txt", "Test_folder"]
 resolution: [0.01, 0.01]
 
 # Optional
 MC_progress: true
 MC_plotting: null
-out_file_name: null
-labels: ["Plab","cosTheta","w"]
+out_file_name: "output_folder"
+labels: ["Plab", "cosTheta", "w"]
+write_individual_files: true
+group_experiments_per_file: true
