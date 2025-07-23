@@ -44,11 +44,11 @@ Labels for columns inside the single combined output file are constructed as fol
 
 2. Followed by pairs of experiment labels for **each experiment in each input file**, derived from the input filename:  
 
-   - If an input file has only **one experiment**, columns are labeled:  
-     filename, filename_unc
+   - If an input file has only **one experiment**, columns are labelled:  
+        filename, filename_unc
 
-   - If an input file has **multiple experiments** (`e > 1`), columns are labeled:  
-     filename_exp1, filename_unc1, filename_exp2, filename_unc2, ...
+   - If an input file has **multiple experiments** (`e > 1`), columns are labelled:  
+        filename_exp1, filename_unc1, filename_exp2, filename_unc2, ...
 
 3. Columns from multiple input files are concatenated in the output file in the order the files are provided.
 
@@ -59,7 +59,7 @@ Labels for columns inside the single combined output file are constructed as fol
 - There is a **single combined output file** that aggregates all input data and experiment results.
 - The filename is determined by the `out_file_name` parameter in `options.yaml`.  
   If not specified, it defaults to `"GP_results.txt"` and is saved in the same folder as the input.
-- The file contains all kinematic dimension columns followed by experiment columns from all input files, labeled as described in the **Output Labels** section.
+- The file contains all kinematic dimension columns followed by experiment columns from all input files, labelled as described in the **Output Labels** section.
 - If a particular experiment does **not** include a measurement at a given kinematic point, the corresponding quantity and error values in the output will be set to `inf` as a placeholder — mirroring the input file format.
 
 ---
