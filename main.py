@@ -13,16 +13,14 @@ from read_in import read_yaml
 ################################################################################
 
 def write_combined_output(experiment_dfs, out_file_name, dim_labels):
-
+    
     """
     Merge multiple experiment DataFrames and write the combined result to a single output csv file.
     """
-
-
     if not experiment_dfs:
         print("No data to write in combined output.")
         return
-    
+
     merged_df = reduce(lambda left, right: pd.merge(left, right, on=dim_labels, how="outer"), experiment_dfs)
     merged_df = merged_df.fillna(float('inf'))
     merged_df.to_csv(out_file_name, index=False)
@@ -38,8 +36,6 @@ def write_individual_outputs(experiment_dfs, out_folder, dim_labels):
     """
     Write individual experiment DataFrames to separate csv files in the specified output folder.
     """
-
-
     out_folder = Path(out_folder)
     if not out_folder.exists():
         out_folder.mkdir(parents=True, exist_ok=True)
@@ -67,8 +63,6 @@ def group_exps_output(experiment_dfs, out_folder, dim_labels):
     """
     Group experiment DataFrames by base quantity name and write merged results to grouped output files.
     """
-
-
     out_folder = Path(out_folder)
     if not out_folder.exists():
         out_folder.mkdir(parents=True, exist_ok=True)
@@ -95,9 +89,11 @@ def group_exps_output(experiment_dfs, out_folder, dim_labels):
 ################################################################################
 
 def create_GP():
+
     """
     Main routine to read experiment configuration, perform Gaussian Process fitting,
     and write results to output files.
+    Returns a single merged DataFrame of all experiments.
     """
 
     resolution, MC_progress, MC_plotting, out_file_name, labels, data_list, write_ind, group_exps = read_yaml()
@@ -185,16 +181,21 @@ def create_GP():
 
         print(f"Finished processing {filename}")
 
-    if not write_ind and experiment_dfs:
+    if experiment_dfs:
         merged_df = reduce(lambda left, right: pd.merge(left, right, on=dim_labels, how="outer"), experiment_dfs)
         merged_df = merged_df.fillna(float('inf'))
-        merged_df.to_csv(combined_output_file, index=False)
-        print(f"Combined results written to {combined_output_file}")
 
-    return
+        if not write_ind:
+            merged_df.to_csv(combined_output_file, index=False)
+            print(f"Combined results written to {combined_output_file}")
 
+        return merged_df
+    else:
+        print("No experiment data to return.")
+        return pd.DataFrame()
 
 ################################################################################
 
 if __name__ == "__main__":
-    create_GP()
+    df = create_GP()
+    
