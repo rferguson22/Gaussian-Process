@@ -146,6 +146,7 @@ def read_yaml():
         raise ValueError("Expected 'file_name' to be a list of file paths or folder paths.")
 
     file_paths = expand_file_paths(file_entries)
+    data_list = check_data(file_paths, resolution, labels)
 
     if not all(isinstance(item, (float, int)) for item in resolution):
         raise ValueError("All resolution values must be floats or integers.")
@@ -168,7 +169,6 @@ def read_yaml():
             out_file_name = str(out_path / "GP_results.txt")
 
     num_kin_dims = len(resolution)
-    data_list = check_data(file_paths, resolution, labels)
 
     if labels is not None:
         if len(labels) == num_kin_dims:
