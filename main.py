@@ -14,6 +14,11 @@ from read_in import read_yaml
 
 def write_combined_output(experiment_dfs, out_file_name, dim_labels):
 
+    """
+    Merge multiple experiment DataFrames and write the combined result to a single output csv file.
+    """
+
+
     if not experiment_dfs:
         print("No data to write in combined output.")
         return
@@ -30,6 +35,11 @@ def write_combined_output(experiment_dfs, out_file_name, dim_labels):
 
 def write_individual_outputs(experiment_dfs, out_folder, dim_labels):
 
+    """
+    Write individual experiment DataFrames to separate csv files in the specified output folder.
+    """
+
+
     out_folder = Path(out_folder)
     if not out_folder.exists():
         out_folder.mkdir(parents=True, exist_ok=True)
@@ -42,7 +52,7 @@ def write_individual_outputs(experiment_dfs, out_folder, dim_labels):
             continue
 
         base_name = quant_cols[0].split("_unc")[0].split("_exp")[0]
-        filename = f"{base_name}_GP_results.csv"
+        filename = f"{base_name}_GP_results.txt"
         out_path = out_folder / filename
         df.to_csv(out_path, index=False)
 
@@ -53,6 +63,11 @@ def write_individual_outputs(experiment_dfs, out_folder, dim_labels):
 ################################################################################
 
 def group_exps_output(experiment_dfs, out_folder, dim_labels):
+
+    """
+    Group experiment DataFrames by base quantity name and write merged results to grouped output files.
+    """
+
 
     out_folder = Path(out_folder)
     if not out_folder.exists():
@@ -70,7 +85,7 @@ def group_exps_output(experiment_dfs, out_folder, dim_labels):
 
     for base_name, dfs in grouped_dfs.items():
         merged_df = reduce(lambda left, right: pd.merge(left, right, on=dim_labels, how="outer"), dfs)
-        filename = f"{base_name}_GP_results.csv"
+        filename = f"{base_name}_GP_results.txt"
         out_path = out_folder / filename
         merged_df.to_csv(out_path, index=False)
         print(f"Written combined output file for {base_name}: {out_path}")
@@ -81,13 +96,17 @@ def group_exps_output(experiment_dfs, out_folder, dim_labels):
 
 def create_GP():
 
+    """
+    Main routine to read experiment configuration, perform Gaussian Process fitting, and write results to output files.
+    """
+
+
     resolution, MC_progress, MC_plotting, out_file_name, labels, data_list, write_ind, group_exps = read_yaml()
 
     experiment_dfs = []
     num_dims = len(resolution)
     dim_labels = labels[:num_dims]
 
-    # Determine output path behavior
     out_path = Path(out_file_name) if out_file_name else Path("GP_results.txt")
 
     if write_ind:
