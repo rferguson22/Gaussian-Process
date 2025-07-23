@@ -38,9 +38,11 @@ See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse
 ## Output Modes & File Naming
 
 ### Combined Output Mode (`write_individual_files: false`)
+
 - A single output file is written.
-- If `out_file_name` is a **file**, output is written directly to that path.
-- If `out_file_name` is a **folder**, output is saved inside as `GP_results.txt`.
+- If `out_file_name` is a **file path** (i.e. does **not** end with a `/`), output is written directly to that file.
+- If `out_file_name` **ends with a `/`**, it is treated as a folder path, and the output is saved inside that folder as `GP_results.txt`.
+
 
 ### Individual Output Mode (`write_individual_files: true`)
 - The value of `out_file_name` is treated as a **folder**, whether or not it ends in `/`.
