@@ -1,13 +1,15 @@
 # Mandatory
-file_name: ["Test_file1.txt", "Test_folder"]
+file_name: ["output_folder"]
 resolution: [0.01, 0.01]
+gp_fit: false
+run_prob_surf: true
 
 # Optional
-out_file_name: "output_file"
+out_file_name: "output_folder/"
 labels: ["Plab", "cosTheta"]
 
 #GP fit optional
 MC_progress: true
 MC_plotting: null
-write_individual_files: false
+write_individual_files: true
 group_experiments_per_file: true
