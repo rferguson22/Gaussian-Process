@@ -6,7 +6,7 @@ import yaml
 ###################################################################################################
 
 def file_has_header(file_path):
-
+    
     """
     Determines if a csv file has a header row by attempting to parse the first row as numeric.
     """

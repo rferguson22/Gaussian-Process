@@ -6,6 +6,10 @@ from scipy.stats import norm
 
 def sum_gaussians(temp_y,temp_gaus):
 
+    '''
+    Calculate the average cumulative probability of multiple Gaussian distributions at points temp_y
+    '''
+
     temp_z=np.zeros(len(temp_y))
 
     dy=abs(max(temp_y)-min(temp_y))/len(temp_y)
@@ -20,6 +24,10 @@ def sum_gaussians(temp_y,temp_gaus):
 ##########################################################################################################
 
 def generate_prob_surf(df,ndims):
+
+    '''
+    Generate a probability surface by evaluating and aggregating Gaussian mixtures for each row of data and save to csv
+    '''
 
     points=100
 
