@@ -169,6 +169,7 @@ def read_yaml():
             out_file_name = str(out_path / "GP_results.txt")
 
     num_kin_dims = len(resolution)
+    print(f"Number of Kinematic Dimensions: {num_kin_dims}")
 
     if labels is not None:
         if len(labels) == num_kin_dims:
