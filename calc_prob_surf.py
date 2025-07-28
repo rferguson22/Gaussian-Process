@@ -23,24 +23,41 @@ def sum_gaussians(temp_y,temp_gaus):
 
 ##########################################################################################################
 
-def generate_prob_surf(df,ndims):
+import os
+import yaml
+import numpy as np
+import pandas as pd
 
+def generate_prob_surf(df, ndims, options_path="options.yaml"):
     '''
-    Generate a probability surface by evaluating and aggregating Gaussian mixtures for each row of data and save to csv
+    Generate a probability surface by evaluating and aggregating Gaussian mixtures
+    for each row of data and save to csv. Output location is determined from options.yaml.
     '''
 
-    points=100
-
+    points = 100
     output_rows = []
 
     print("Calculating Probability")
 
-    output_file="prob_surf.csv"
+    # Default filename
+    default_filename = "prob_surf.txt"
+    output_file = default_filename
+
+    # Load options.yaml if it exists
+    if os.path.exists(options_path):
+        with open(options_path, 'r') as f:
+            options = yaml.safe_load(f) or {}
+
+        output_path = options.get("out_file_name", "").strip()
+
+        if output_path:
+            if os.path.isdir(output_path):
+                output_file = os.path.join(output_path, default_filename)
+            else:
+                output_file = output_path
 
     for _, row in df.iterrows():
-
         row = row.to_numpy()
-
         temp_gaus = row[ndims:][np.isfinite(row[ndims:])]
 
         if len(temp_gaus) >= 2 and len(temp_gaus) % 2 == 0:
@@ -56,9 +73,9 @@ def generate_prob_surf(df,ndims):
                 output_rows.append(list(row[:ndims]) + [y_val, p_val])
 
     output_df = pd.DataFrame(output_rows, columns=df.columns[:ndims].tolist() + ["quantity", "prob"])
-
     output_df.to_csv(output_file, index=False)
 
     print(f"Probability results written to {output_file}")
 
     return
+

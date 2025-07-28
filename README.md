@@ -61,20 +61,19 @@ If `gp_fit: false`, no new GP outputs are written — instead, files are assumed
   - If `group_experiments_per_file: true`, one output per file: `filename_GP_results.txt`
   - If `false`, one per experiment: `filename_exp1_GP_results.txt`, etc.
 
-In all cases, missing measurements in any experiment are filled with `inf`.
+In all cases, missing measurements in any experiment are filled with `inf` and if `out_file_name` is **not set or is empty**, the combined in one file and saved as `GP_results.txt` in the current working directory.
 
 ---
 
 ### Probability Surface Output (`gen_prob_surf: true`)
 
 - If `gen_prob_surf: true`, a probability surface is calculated from the merged GP result(s).
-- The probability surface output is saved as:  
-  `probability_surface.txt` — written to the same directory as `out_file_name`, or the current working directory if unspecified.
-- This file will contain:
-  - All shared kinematic coordinates.
-  - The associated posterior probabilities or probability density surface.
-"""
+- The output location is determined from the `out_file_name` value in `options.yaml`:
+  - If `out_file_name` is a **directory**, the file is saved as `prob_surf.txt` inside that directory.
+  - If `out_file_name` is a **full file path**, the output is saved with that exact name.
+  - If `out_file_name` is **not set or is empty**, the file is saved as `prob_surf.txt` in the current working directory.
 
+---
 
 ## Output Labels
 
