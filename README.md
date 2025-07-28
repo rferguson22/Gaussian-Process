@@ -11,7 +11,7 @@ See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse
 - If `gp_fit: true`: input files must contain **raw experimental data** to be used for GP fitting.
 - If `gp_fit: false`: input files must contain **precomputed GP results** to be used for probability calculation.
 
-Regardless of this setting, the following format rules apply to **all files**.
+Regardless of this setting, the following format rules apply to **all files**:
 
 - The number of kinematic dimensions `n` is **assumed to be the length of the `resolution` list** in `options.yaml`.
 - Input can be provided as:
@@ -44,14 +44,17 @@ Regardless of this setting, the following format rules apply to **all files**.
 
 ## Output Modes & File Naming
 
+This section applies **only when `gp_fit: true`**, i.e. when the code is generating new GP results from raw experimental data.  
+If `gp_fit: false`, no new GP outputs are written — instead, files are assumed to contain existing results for probability surface generation.
+
 ### Combined Output Mode (`write_individual_files: false`)
 
 - A single output file is written.
 - If `out_file_name` is a **file path** (i.e. does **not** end with a `/`), output is written directly to that file.
 - If `out_file_name` **ends with a `/`**, it is treated as a folder path, and the output is saved inside that folder as `GP_results.txt`.
 
-
 ### Individual Output Mode (`write_individual_files: true`)
+
 - The value of `out_file_name` is treated as a **folder**, whether or not it ends in `/`.
 - That folder will be created if it doesn’t exist.
 - Each input file produces its own output file(s):
@@ -61,6 +64,17 @@ Regardless of this setting, the following format rules apply to **all files**.
 In all cases, missing measurements in any experiment are filled with `inf`.
 
 ---
+
+### Probability Surface Output (`gen_prob_surf: true`)
+
+- If `gen_prob_surf: true`, a probability surface is calculated from the merged GP result(s).
+- The probability surface output is saved as:  
+  `probability_surface.txt` — written to the same directory as `out_file_name`, or the current working directory if unspecified.
+- This file will contain:
+  - All shared kinematic coordinates.
+  - The associated posterior probabilities or probability density surface.
+"""
+
 
 ## Output Labels
 
