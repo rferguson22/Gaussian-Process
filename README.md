@@ -7,12 +7,11 @@ See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse
 ---
 ## Input Data Assumptions
 
->  **File format expectations depend on the `gp_fit` flag in `options.yaml`:**
->
-> - If `gp_fit: true`: input files must contain **raw experimental data** to be used for GP fitting.
-> - If `gp_fit: false`: input files must contain **precomputed GP results** to be used for probability calculation.
->
-> Regardless of this setting, the following format rules apply to **all files**.
+**File format expectations depend on the `gp_fit` flag in `options.yaml`:**
+- If `gp_fit: true`: input files must contain **raw experimental data** to be used for GP fitting.
+- If `gp_fit: false`: input files must contain **precomputed GP results** to be used for probability calculation.
+
+Regardless of this setting, the following format rules apply to **all files**.
 
 - The number of kinematic dimensions `n` is **assumed to be the length of the `resolution` list** in `options.yaml`.
 - Input can be provided as:
