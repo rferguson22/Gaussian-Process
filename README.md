@@ -5,8 +5,14 @@ This Python script generates a **Gaussian Process (GP)** using **Markov Chain Mo
 See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse Data*](https://arxiv.org/abs/2505.01473).
 
 ---
-
 ## Input Data Assumptions
+
+>  **File format expectations depend on the `gp_fit` flag in `options.yaml`:**
+>
+> - If `gp_fit: true`: input files must contain **raw experimental data** to be used for GP fitting.
+> - If `gp_fit: false`: input files must contain **precomputed GP results** to be used for probability calculation.
+>
+> Regardless of this setting, the following format rules apply to **all files**.
 
 - The number of kinematic dimensions `n` is **assumed to be the length of the `resolution` list** in `options.yaml`.
 - Input can be provided as:
@@ -26,6 +32,8 @@ See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse
 
 | Parameter                  | Type    | Description                                                                                                                                              | Default             |
 |---------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
+| `gp_fit`                  | Boolean | If `true`, run Gaussian Process fitting. If `false`, assume input files are precomputed GP results.                                                     | `True`              |
+| `gen_prob_surf`           | Boolean | If `true`, compute and output a probability surface from merged GP results.                                                                              | `False`             |
 | `MC_progress`             | Boolean | Whether to display the MCMC progress.                                                                                                                    | `False`             |
 | `MC_plotting`             | Boolean | Whether to plot and save MCMC corner plots, KDE peaks, and silhouette scores.                                                                            | `False`             |
 | `out_file_name`           | String  | For combined mode: output file path or folder. For individual mode: treated as a folder path.                                                            | `"GP_results.txt"`  |
