@@ -61,7 +61,9 @@ If `gp_fit: false`, no new GP outputs are written — instead, files are assumed
   - If `group_experiments_per_file: true`, one output per file: `filename_GP_results.txt`
   - If `false`, one per experiment: `filename_exp1_GP_results.txt`, etc.
 
-In all cases, missing measurements in any experiment are filled with `inf` and if `out_file_name` is **not set or is empty**, the combined in one file and saved as `GP_results.txt` in the current working directory.
+In all cases:
+- Missing measurements in any experiment are filled with `inf`.
+- If `out_file_name` is **not set or is empty**, the combined in one file and saved as `GP_results.txt` in the current working directory.
 
 ---
 
