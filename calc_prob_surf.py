@@ -39,11 +39,9 @@ def generate_prob_surf(df, ndims, options_path="options.yaml"):
 
     print("Calculating Probability")
 
-    # Default filename
     default_filename = "prob_surf.txt"
     output_file = default_filename
 
-    # Load options.yaml if it exists
     if os.path.exists(options_path):
         with open(options_path, 'r') as f:
             options = yaml.safe_load(f) or {}

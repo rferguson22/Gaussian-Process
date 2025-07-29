@@ -54,153 +54,98 @@ def sigma_to_percent(x):
 
     return upper-lower
 
-##############################################################################################
+##################################################################################################################
 
-def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_file_name):  
+def basic_pso(objective_func, bounds, num_particles=30, max_iter=200, w=0.7, c1=1.5, c2=2.0, verbose=False):
 
-    '''
-    Finds the optimal length scale based on the given loss function. 
-    '''
+    ndim = len(bounds[0])
+    lower, upper = np.array(bounds[0]), np.array(bounds[1])
 
-    original_file_path = Path(out_file_name)
-    plotting_path = original_file_path.parent
+    pos = np.random.uniform(low=lower, high=upper, size=(num_particles, ndim))
+    vel = np.zeros_like(pos)
 
-    ndim=len(x_known)
-    nwalkers=8*ndim
-    max_n=2000*ndim
+    personal_best_pos = np.copy(pos)
+    personal_best_val = np.array([objective_func(p) for p in pos])
 
-    r_hat_tol=1.18
-    tau_tol=0.15
+    global_best_idx = np.argmin(personal_best_val)
+    global_best_pos = personal_best_pos[global_best_idx]
+    global_best_val = personal_best_val[global_best_idx]
 
-    diff = (np.max(x_known, axis=1) - np.min(x_known, axis=1)) / x_known.shape[1]
-    endpoints = np.column_stack((np.full(x_known.shape[0], 1e-16), 10 * diff))
+    loss_history = []
 
-    
-    sampling = LHS(xlimits=np.array(endpoints),criterion='center')
-    initial_positions = sampling(nwalkers)
-    
-    filename="backend.h5"
-    backend=emcee.backends.HDFBackend(filename)
-    backend.reset(nwalkers,ndim)
+    for i in range(max_iter):
+        r1, r2 = np.random.rand(num_particles, ndim), np.random.rand(num_particles, ndim)
+        vel = w * vel + c1 * r1 * (personal_best_pos - pos) + c2 * r2 * (global_best_pos - pos)
+        pos += vel
+        pos = np.clip(pos, lower, upper)
 
-    print("Beginning MCMC")
+        scores = np.array([objective_func(p) for p in pos])
+        better_mask = scores < personal_best_val
+        personal_best_pos[better_mask] = pos[better_mask]
+        personal_best_val[better_mask] = scores[better_mask]
 
-    sigma_vals = np.linspace(0.001, 3, 1000) 
+        global_best_idx = np.argmin(personal_best_val)
+        if personal_best_val[global_best_idx] < global_best_val:
+            global_best_pos = personal_best_pos[global_best_idx]
+            global_best_val = personal_best_val[global_best_idx]
+
+        loss_history.append(global_best_val)
+
+        if verbose and i % 10 == 0:
+            print(f"Iteration {i:3d} | Best loss: {-global_best_val:.6f}")
+
+    return global_best_pos, global_best_val, loss_history
+
+
+###############################################################################################
+
+def len_scale_opt(x_known, y_known, e_known, MC_progress=False, MC_plotting=False, labels=None, out_file_name="output"):
+
+    ndim = x_known.shape[0]
+
+    sigma_vals = np.linspace(0.001, 3, 1000)
     expected_percents = sigma_to_percent(sigma_vals)
 
-    with multiprocessing.Pool(16) as pool:
+    diff = (np.max(x_known, axis=1) - np.min(x_known, axis=1)) / x_known.shape[1]
+    lower_bounds = np.full(ndim, 1e-16)
+    upper_bounds = 10 * diff
 
-        index=0
-        autocorr=np.empty(max_n)
-        r_hat_conv=False
-        
-        old_tau=np.inf
-        sampler = emcee.EnsembleSampler(nwalkers,ndim,sigma_check,args=(x_known,y_known,e_known,sigma_vals,expected_percents),\
-                                        backend=backend,pool=pool)
-        for sample in sampler.sample(initial_positions,iterations=max_n,progress=MC_progress):
-            if sampler.iteration%100:
-                continue
-        
-            tau=sampler.get_autocorr_time(tol=0)
-            autocorr[index]=np.mean(tau)
-            index+=1
-            
-            tau_conv=np.all((np.abs(old_tau-tau)/tau)<tau_tol)
-            if MC_progress:
-                print("tau_stability:\t"+str(np.abs(old_tau-tau)/tau))
+    def wrapped_loss(lengths):
+        return -sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percents)
 
-            chains=sampler.get_chain(discard=50,thin=5,flat=False)
-            if chains.shape[1]>1:
-                r_hat=calc_r_hat(chains)
-                r_hat_conv=np.all(r_hat<r_hat_tol)
-                if MC_progress:
-                    print("r_hat:\t\t"+str(r_hat))
-            
-            if r_hat_conv and tau_conv:
-                break
-            old_tau=tau
+    if MC_progress:
+        print("Starting PSO...")
+    best_pos, best_val, loss_history = basic_pso(
+        wrapped_loss,
+        bounds=(lower_bounds, upper_bounds),
+        num_particles=40,
+        max_iter=200,
+        verbose=MC_progress
+    )
 
-    burnin=int(0.2*sampler.iteration)
-    
-    samples = sampler.get_chain(discard=burnin,thin=5,flat=True)
+    if MC_progress:
+        print("\nRefining best result with Nelder-Mead...")
+    result = minimize(wrapped_loss, best_pos, method="Nelder-Mead")
 
-    num_peaks,x,density=test_unimode(samples,dim=0)
-
-    print("MCMC converged. Checking for multimodal surface")
+    if MC_progress:
+        print(f"\nBest from PSO:           {best_pos}")
+        print(f"Refined length scales:   {result.x}")
+        print(f"Final loss:             {-result.fun:.6f}")
 
     if MC_plotting:
-    
-        fig=corner.corner(samples,labels=labels[:-2])
-        fig.savefig(plotting_path+"/GP_corner_plot.png")
-    
-        plt.figure(figsize=(8,6))
-        plt.plot(x,density,label="KDE")
-        plt.title(f"KDE and Peak Detection (Peaks Found: {num_peaks})")
-        plt.xlabel("Dim 1")
-        plt.ylabel("Density")
+        plt.figure(figsize=(8,5))
+        plt.plot(-np.array(loss_history), label="Best loss (PSO)")
+        plt.xlabel("Iteration")
+        plt.ylabel("Loss (sigma_check)")
+        plt.title("PSO Convergence")
+        plt.grid(True)
         plt.legend()
-        plt.savefig(plotting_path+"/GP_KDE_plots.png")
+        plt.tight_layout()
+        plt.savefig(out_file_name.replace(".h5", "_pso_convergence.png"))
         plt.show()
 
-    if num_peaks>1:
-        print("Multimodal distribution detected. Performing Clustering")
+    return result.x
 
-        silhouette_scores=[]
-        K_values=range(2,11)
-
-        for K in K_values:
-            kmeans=KMeans(n_clusters=K)
-            cluster_labels=kmeans.fit_predict(samples)
-            score=silhouette_score(samples,cluster_labels)
-            silhouette_scores.append(score)
-
-        if MC_plotting:
-            plt.figure(figsize=(8,6))
-            plt.plot(K_values,silhouette_scores,"-o",color="blue")
-            plt.xlabel("Number of Clusters (K)")
-            plt.ylabel("Silhouette Score")
-            plt.title("Silhouette Score for Optimal K")
-            plt.grid(True)
-            plt.savefig(plotting_path+"/GP_silhouette_scores.png")
-            plt.show()
-
-        optimal_K=K_values[np.argmax(silhouette_scores)]
-        print(f"Optimal number of Clusters (K): {optimal_K}")
-
-        kmeans=KMeans(n_clusters=optimal_K)
-        cluster_labels=kmeans.fit_predict(samples)
-        modes=kmeans.cluster_centers_
-
-    else:
-        print("Single mode surface")
-        modes=np.mean(samples,axis=0,keepdims=True)
-
-    print("Modes of surface:")
-    print(modes)
-    
-    def func_minimise(lengths):
-        return -sigma_check(lengths,x_known,y_known,e_known,sigma_vals,expected_percents)    
-    
-    #bounds=[(1e-16,None) for i in range(ndim)]
-
-    score=1e12
-    best=[]
-    
-    for j in range(len(modes)):
-        result=minimize(func_minimise,modes[j],method="Nelder-Mead")
-        if result.fun<score:
-            best=result.x
-            score=result.fun
-
-    print("Optimal length scale found:")
-    print(best)
-    print("Value of loss function:")
-    print(score)
-
-    if os.path.exists(filename):
-        os.remove(filename)
-
-    return best
 
 ##############################################################################
 

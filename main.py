@@ -6,6 +6,7 @@ from functools import reduce
 from GP_fit import create_GP
 from calc_prob_surf import generate_prob_surf
 from read_in import expand_file_paths,check_data
+import time
 
 ###########################################################################################
 
@@ -62,11 +63,11 @@ def main_gp_flow():
     file_entries = options["file_name"]
 
     if gp_fit:
-        df, ndims = create_GP()
+        df, ndims,len_scale = create_GP()
     else:
         df, ndims = load_and_merge_gp_results(file_entries, resolution, labels)
 
-    return df, ndims, run_prob_surf
+    return df, ndims, run_prob_surf,len_scale
 
 #####################################################################################################################
 
@@ -76,7 +77,33 @@ def main():
     '''
 
 
-    df, ndims, run_prob_surf = main_gp_flow()
+    runtimes = []
+    len_scales = []
+
+    # Run the function 100 times
+    for i in range(100):
+        start_time = time.time()
+
+        df, ndims, run_prob_surf, len_scale = main_gp_flow()
+
+        end_time = time.time()
+        duration = end_time - start_time
+
+        runtimes.append(duration)
+        len_scales.append(len_scale)
+
+        print(f"Run {i+1:3}: Time = {duration:.4f} seconds, len_scale = {len_scale}")
+
+    results_df = pd.DataFrame({
+        'runtime_sec': runtimes,
+        'len_scale': len_scales
+    })
+
+    results_df.to_csv('gp_flow_runs.csv', index=False)
+    print("Saved results to 'gp_flow_runs.csv'")
+
+
+
     if run_prob_surf:
         print("Generating probability surface...")
         generate_prob_surf(df, ndims)

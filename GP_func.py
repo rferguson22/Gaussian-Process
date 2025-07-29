@@ -11,7 +11,12 @@ def GP(x_known, y_known, e_known, x_fit, lengths, batch_size=10000):
     e_fit = []
 
     K = kernel_func(x_known, x_known, lengths) + np.diag(e_known**2)
-    L = cholesky(K)  
+
+    try:
+        L = np.linalg.cholesky(K)
+    except np.linalg.LinAlgError as e:
+        print(lengths)
+        raise
 
     alpha = solve(L.T, solve(L, y_known))
 

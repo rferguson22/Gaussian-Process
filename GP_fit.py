@@ -36,7 +36,7 @@ def process_experiment(x_known, y_known, e_known, resolution, dim_labels, filena
     df[quant_col] = y_fit.flatten()
     df[err_col] = e_fit.flatten()
 
-    return df
+    return df,len_scale
 
 ################################################################################
 
@@ -132,7 +132,7 @@ def create_GP():
         for idx, (x_known, (y_known, e_known)) in enumerate(zip(x_known_list, exp_pairs), start=1):
             print(f"Processing experiment {idx}/{total_experiments} from file {file_idx}/{len(data_list)}: {filename}")
 
-            df = process_experiment(x_known, y_known, e_known, resolution, dim_labels, filename, idx, total_experiments,\
+            df,len_scale = process_experiment(x_known, y_known, e_known, resolution, dim_labels, filename, idx, total_experiments,\
                                      MC_progress, MC_plotting, labels_out, out_file_name)
             if df is None:
                 continue
@@ -148,11 +148,11 @@ def create_GP():
             write_grouped_file(file_dfs, filename, out_path, dim_labels)
 
     if not write_ind and experiment_dfs:
-        return write_combined_file(experiment_dfs, out_path, dim_labels),num_dims
+        return write_combined_file(experiment_dfs, out_path, dim_labels),num_dims,len_scale,len_scale
 
     if experiment_dfs:
         merged_df = reduce(lambda left, right: pd.merge(left, right, on=dim_labels, how="outer"), experiment_dfs).fillna(float('inf'))
-        return merged_df,num_dims
+        return merged_df,num_dims,len_scale
     else:
         print("No experiment data to return")
         return pd.DataFrame(),num_dims
