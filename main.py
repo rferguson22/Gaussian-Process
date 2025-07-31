@@ -1,3 +1,14 @@
+import os
+cores_to_use = 2
+os.environ["OMP_NUM_THREADS"] = str(cores_to_use)
+os.environ["OPENBLAS_NUM_THREADS"] = str(cores_to_use)
+os.environ["MKL_NUM_THREADS"] = str(cores_to_use)
+os.environ["VECLIB_MAXIMUM_THREADS"] = str(cores_to_use)
+os.environ["NUMEXPR_NUM_THREADS"] = str(cores_to_use)
+os.environ["MKL_DYNAMIC"] = "FALSE"
+
+
+
 import pandas as pd
 from pathlib import Path
 import yaml
@@ -76,33 +87,7 @@ def main():
     Main entry point that runs the GP workflow and optionally generates a probability surface based on options.yaml
     '''
 
-
-    runtimes = []
-    len_scales = []
-
-    # Run the function 100 times
-    for i in range(100):
-        start_time = time.time()
-
-        df, ndims, run_prob_surf, len_scale = main_gp_flow()
-
-        end_time = time.time()
-        duration = end_time - start_time
-
-        runtimes.append(duration)
-        len_scales.append(len_scale)
-
-        print(f"Run {i+1:3}: Time = {duration:.4f} seconds, len_scale = {len_scale}")
-
-    results_df = pd.DataFrame({
-        'runtime_sec': runtimes,
-        'len_scale': len_scales
-    })
-
-    results_df.to_csv('gp_flow_runs.csv', index=False)
-    print("Saved results to 'gp_flow_runs.csv'")
-
-
+    df, ndims, run_prob_surf, len_scale = main_gp_flow()
 
     if run_prob_surf:
         print("Generating probability surface...")
@@ -111,10 +96,42 @@ def main():
         print("Skipping probability surface generation as per options.yaml")
 
         return
+    
+####################################################################################################
+
+def run_100():
+        
+        runtimes = []
+        len_scales = []
+
+        for i in range(100):
+            start_time = time.time()
+
+            df, ndims, run_prob_surf, len_scale = main_gp_flow()
+
+            end_time = time.time()
+            duration = end_time - start_time
+
+            runtimes.append(duration)
+            len_scales.append(len_scale)
+
+            print(f"Run {i+1:3}: Time = {duration:.4f} seconds, len_scale = {len_scale}")
+
+        results_df = pd.DataFrame({
+            'runtime_sec': runtimes,
+            'len_scale': len_scales
+        })
+
+        results_df.to_csv('gp_flow_runs.csv', index=False)
+        print("Saved results to 'gp_flow_runs.csv'")
+
+        return
+
 
 
 ########################################################################################################################
 
 if __name__ == "__main__":
-    main()
+    #main()
+    run_100()
 

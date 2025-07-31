@@ -1,4 +1,21 @@
+import os
+
+# Limit all common thread pools to 2 threads (or 20% of cores you want)
+cores_to_use = 2
+os.environ["OMP_NUM_THREADS"] = str(cores_to_use)
+os.environ["OPENBLAS_NUM_THREADS"] = str(cores_to_use)
+os.environ["MKL_NUM_THREADS"] = str(cores_to_use)
+os.environ["VECLIB_MAXIMUM_THREADS"] = str(cores_to_use)
+os.environ["NUMEXPR_NUM_THREADS"] = str(cores_to_use)
+os.environ["MKL_DYNAMIC"] = "FALSE"
+
+# Now import libraries that use threads
+
+
+
+import math
 import numpy as np
+
 from numpy import random
 
 from scipy.optimize import curve_fit
@@ -6,6 +23,7 @@ from scipy.special import legendre
 from scipy.stats.distributions import norm
 from scipy.stats import poisson
 import scipy
+import time
 
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
@@ -21,6 +39,9 @@ from collections import Counter
 from find_len_scales import len_scale_opt,calculate_std_percent,calculate_pull
 from convex_hull import fill_convex_hull,round_to_res
 from GP_func import GP
+
+from threadpoolctl import threadpool_limits
+
 
 #############################################################################################################
 
@@ -419,105 +440,108 @@ def coeff_pull_table():
 
     coeff_pulls=np.array(coeff_pulls)
 
-    return
+    print(coeff_pulls)
+
+    return coeff_pulls
 
 
 ###################################################################################################################
 
-def fit_pseudodata():
+import time  # Import time module
 
+def fit_pseudodata():
     '''
     Fits pseudodata
     '''
-
-    xlimits=([coeff_limits]*len(legendre_orders))
-
-    sampling = LHS(xlimits=np.array(xlimits),criterion='center')
+    xlimits = ([coeff_limits] * len(legendre_orders))
+    sampling = LHS(xlimits=np.array(xlimits), criterion='center')
     hypercube = sampling(hypercube_len)
 
+    fraction = abs(coeff_limits[0] - coeff_limits[1]) / (2 * len(hypercube))
+    decimal_places = str(fraction)[::-1].find('.')
 
-    fraction=abs(coeff_limits[0]-coeff_limits[1])/(2*len(hypercube))
-    decimal_places =str(fraction)[::-1].find('.')
+    j = list(range(len(hypercube)))
 
-    j=[]
-    for i in range(len(hypercube)):
-        j.append(i)
+    data_dict = dict({
+        "coefficients": j, "x_known": j, "y_known": j, "z_known": j, "e_known": j,
+        "hyperparameter": j, "0.67std_percent_known": j, "1std_percent_known": j,
+        "1.96std_percent_known": j, "0.67std_percent_fit_rand": j, "1std_percent_fit_rand": j,
+        "1.96std_percent_fit_rand": j, "coeff_known_pull": j, "coeff_known": j,
+        "coeff_GP_pull_rand": j, "coeff_GP_rand": j,
+        "runtime_seconds": j  # ← Add runtime column
+    })
 
-    data_dict=dict({"coefficients":j,"x_known":j,"y_known":j,"z_known":j,"e_known":j,"hyperparameter":j,\
-                    "0.67std_percent_known":j,"1std_percent_known":j,"1.96std_percent_known":j,\
-                    "0.67std_percent_fit_rand":j,"1std_percent_fit_rand":j,"1.96std_percent_fit_rand":j,\
-                    "coeff_known_pull":j,"coeff_known":j,\
-                    "coeff_GP_pull_rand":j,"coeff_GP_rand":j})
-
-    data=pd.DataFrame(data_dict)
+    data = pd.DataFrame(data_dict)
 
     for item in data_dict.keys():
-        data[item]=data[item].astype("object")
-
+        data[item] = data[item].astype("object")
 
     for k in range(len(hypercube)):
         print(k)
-        coeff=[round(item,decimal_places) for item in hypercube[k]]
-        
-        coeff_all=[]
-        
+        start_time = time.time()  # Start timing
+
+        coeff = [round(item, decimal_places) for item in hypercube[k]]
+        coeff_all = []
+
         for i in range(len(coeff)):
-            gaus_mean=random.uniform(gaus_mean_limits[0],gaus_mean_limits[1])
-            gaus_width=random.uniform(gaus_width_limits[0],gaus_width_limits[1])
-            coeff_all.append(coeff[i])
-            coeff_all.append(gaus_mean)
-            coeff_all.append(gaus_width)  
-            
-        coeff_all=np.array(coeff_all)
-        
-        xy_known=assign_known_parameters(energy_limits,measured_angle_limits,\
-                                        datapoints_energies_measured,datapoints_angles_measured)
-            
-        xy= create_convex_hull_boundary(xy_known,accuracy_e,accuracy_a)
-        
-        z_func,coeff_all=generate_pseudo_func(xy,coeff_all,legendre_orders)
-        
-        z_known,e_known,z_func_known=generate_pseudo_data(xy_known,xy,z_func,eff_count_limits)
+            gaus_mean = random.uniform(gaus_mean_limits[0], gaus_mean_limits[1])
+            gaus_width = random.uniform(gaus_width_limits[0], gaus_width_limits[1])
+            coeff_all.extend([coeff[i], gaus_mean, gaus_width])
 
-        hyperpars=len_scale_opt(xy_known,z_known,e_known,False,False,"","")
-            
-        z_fit,e_fit=GP(xy_known,z_known,e_known,xy,hyperpars)
-        
-        xy_rand=get_xy_rand(xy,xy_known,accuracy_a,accuracy_e)
-        z_fit_rand,e_fit_rand,z_func_rand=get_fit_points(xy_rand,xy,z_fit,e_fit,z_func)
-            
-            
-        coeff_known_pull,coeff_known=fit_data(xy_known,z_known,e_known,coeff_limits,\
-                                                            gaus_mean_limits,gaus_width_limits,coeff_all)
-        coeff_GP_pull_rand,coeff_GP_rand=fit_data(xy_rand,z_fit_rand,e_fit_rand,coeff_limits,\
-                                                        gaus_mean_limits,gaus_width_limits,coeff_all)
-            
-        
-        
-        data.at[k,"coefficients"] = coeff_all 
-        data.at[k,"x_known"] = xy_known[0]
-        data.at[k,"y_known"] = xy_known[1]
-        data.at[k,"z_known"] = z_known
-        data.at[k,"e_known"] = e_known
-        data.at[k,"hyperparameter"]=hyperpars
+        coeff_all = np.array(coeff_all)
 
-        data.at[k,"0.67std_percent_known"]=calculate_std_percent(z_known,z_func_known,e_known,0.67)
-        data.at[k,"1std_percent_known"]=calculate_std_percent(z_known,z_func_known,e_known,1)
-        data.at[k,"1.96std_percent_known"]=calculate_std_percent(z_known,z_func_known,e_known,1.96)
-        
-        data.at[k,"0.67std_percent_fit_rand"]=calculate_std_percent(z_fit_rand,z_func_rand,e_fit_rand,0.67)
-        data.at[k,"1std_percent_fit_rand"]=calculate_std_percent(z_fit_rand,z_func_rand,e_fit_rand,1)
-        data.at[k,"1.96std_percent_fit_rand"]=calculate_std_percent(z_fit_rand,z_func_rand,e_fit_rand,1.96) 
-        
-        data.at[k,"coeff_known_pull"]=coeff_known_pull
-        data.at[k,"coeff_known"]=coeff_known
-        
-        data.at[k,"coeff_GP_pull_rand"]=coeff_GP_pull_rand
-        data.at[k,"coeff_GP_rand"]=coeff_GP_rand
+        xy_known = assign_known_parameters(energy_limits, measured_angle_limits,
+                                           datapoints_energies_measured, datapoints_angles_measured)
+
+        xy = create_convex_hull_boundary(xy_known, accuracy_e, accuracy_a)
+        z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
+        z_known, e_known, z_func_known = generate_pseudo_data(xy_known, xy, z_func, eff_count_limits)
+
+        hyperpars = len_scale_opt(xy_known, z_known, e_known, True, False, None, "")
+        z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars)
+
+        xy_rand = get_xy_rand(xy, xy_known, accuracy_a, accuracy_e)
+        z_fit_rand, e_fit_rand, z_func_rand = get_fit_points(xy_rand, xy, z_fit, e_fit, z_func)
+
+        coeff_known_pull, coeff_known = fit_data(
+            xy_known, z_known, e_known, coeff_limits,
+            gaus_mean_limits, gaus_width_limits, coeff_all
+        )
+
+        coeff_GP_pull_rand, coeff_GP_rand = fit_data(
+            xy_rand, z_fit_rand, e_fit_rand, coeff_limits,
+            gaus_mean_limits, gaus_width_limits, coeff_all
+        )
+
+        # Store results
+        data.at[k, "coefficients"] = coeff_all
+        data.at[k, "x_known"] = xy_known[0]
+        data.at[k, "y_known"] = xy_known[1]
+        data.at[k, "z_known"] = z_known
+        data.at[k, "e_known"] = e_known
+        data.at[k, "hyperparameter"] = hyperpars
+
+        data.at[k, "0.67std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 0.67)
+        data.at[k, "1std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 1)
+        data.at[k, "1.96std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 1.96)
+
+        data.at[k, "0.67std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 0.67)
+        data.at[k, "1std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 1)
+        data.at[k, "1.96std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 1.96)
+
+        data.at[k, "coeff_known_pull"] = coeff_known_pull
+        data.at[k, "coeff_known"] = coeff_known
+
+        data.at[k, "coeff_GP_pull_rand"] = coeff_GP_pull_rand
+        data.at[k, "coeff_GP_rand"] = coeff_GP_rand
+
+        end_time = time.time()  # End timing
+        data.at[k, "runtime_seconds"] = end_time - start_time  # Store runtime
 
     data.to_csv('pseudodata_results.csv', index=False)
 
     return
+
 
 ################################################################################################################
 
@@ -617,12 +641,30 @@ def fit_to_func():
 
     return
 
+######################################################################################
+
+def print_std():
+
+    data=pd.read_csv("pseudodata_results.csv")
+
+    print(f"0.67 known: \t{np.mean(data['0.67std_percent_known'].to_numpy())}")
+    print(f"0.67 GP: \t{np.mean(data['0.67std_percent_fit_rand'].to_numpy())}\n")
+
+    print(f"1 known: \t{np.mean(data['1std_percent_known'].to_numpy())}")
+    print(f"1 GP: \t\t{np.mean(data['1std_percent_fit_rand'].to_numpy())}\n")
+
+    print(f"1.96 known: \t{np.mean(data['1.96std_percent_known'].to_numpy())}")
+    print(f"1.96 GP: \t{np.mean(data['1.96std_percent_fit_rand'].to_numpy())}\n")
+
+    return
+        
+
 #################################################################################################################
 
 energy_limits=[1.2,2]
 angle_limits=[-1,1]
-datapoints_energies_measured=4
-datapoints_angles_measured=[4,10]
+datapoints_energies_measured=6
+datapoints_angles_measured=[8,10]
 gaus_mean_limits=[1.4,1.8]       
 gaus_width_limits=[0.25,0.75]
 measured_angle_limits=[-0.85,0.85]   
@@ -642,3 +684,5 @@ fit_pseudodata()
 #coeff_pull_table()
 
 #fit_to_func()
+
+#print_std()

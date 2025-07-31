@@ -20,7 +20,8 @@ def process_experiment(x_known, y_known, e_known, resolution, dim_labels, filena
         print(f"  Skipping experiment: no valid data points")
         return None
 
-    len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels_out, out_file_name)
+    len_scale = len_scale_opt(x_known, y_known, e_known, True, False, None, "")
+
     x_fit = fill_convex_hull(x_known.T, resolution)
     y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
 

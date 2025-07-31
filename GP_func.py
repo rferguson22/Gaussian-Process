@@ -14,9 +14,17 @@ def GP(x_known, y_known, e_known, x_fit, lengths, batch_size=10000):
 
     try:
         L = np.linalg.cholesky(K)
-    except np.linalg.LinAlgError as e:
-        print(lengths)
+    except np.linalg.LinAlgError as err:
+        print("Cholesky failed: matrix not PD.")
+        print("Min eigenvalue:", np.min(np.linalg.eigvalsh(K)))
+        print("Condition number:", np.linalg.cond(K))
+        print("Lengths used:", lengths)
+        print("e_known min/max:", np.min(e_known), np.max(e_known))
+        print("x_known shape:", x_known.shape)
+        print("K diagonal min/max:", np.min(np.diag(K)), np.max(np.diag(K)))
+        print("K:\n", K)
         raise
+
 
     alpha = solve(L.T, solve(L, y_known))
 
