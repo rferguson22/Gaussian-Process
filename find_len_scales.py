@@ -61,162 +61,104 @@ def sigma_to_percent(x):
 
 ##################################################################################################################
 
-
-def len_scale_opt(x_known,y_known,e_known,MC_progress,MC_plotting,labels,out_file_name):  
-
+def len_scale_opt(x_known, y_known, e_known, MC_progress=False, MC_plotting=False,
+                  labels=None, out_file_name="output.txt",
+                  num_particles=30, max_iters=200, patience=30, refine=True):
     '''
-    Finds the optimal length scale based on the given loss function. 
+    Enhanced single-run PSO for optimal length scale using:
+    - Dynamic inertia
+    - Velocity clamping
+    - Latin Hypercube Sampling
+    - Early stopping
+    - Optional local refinement
     '''
 
-    original_file_path = Path(out_file_name)
-    plotting_path = original_file_path.parent
-
-    ndim=len(x_known)
-    nwalkers=20*ndim
-    max_n=2000*ndim
-
-    r_hat_tol=1.1
-    tau_tol=0.2
-
-    diff = (np.max(x_known, axis=1) - np.min(x_known, axis=1))
+    ndim = len(x_known)
+    diff = np.max(x_known, axis=1) - np.min(x_known, axis=1)
     lower_bounds = 0.01 * diff
     upper_bounds = 2.0 * diff
-    endpoints = np.column_stack((lower_bounds, upper_bounds))
+    bounds = [(l, u) for l, u in zip(lower_bounds, upper_bounds)]
 
-    
-    sampling = LHS(xlimits=np.array(endpoints),criterion='center')
-    initial_positions = sampling(nwalkers)
-    initial_positions += 1e-5 * np.random.randn(*initial_positions.shape)
-    
-    filename="backend.h5"
-    backend=emcee.backends.HDFBackend(filename)
-    backend.reset(nwalkers,ndim)
-
-    print("Beginning MCMC")
-
-    sigma_vals = np.linspace(0.001, 3, 1000) 
+    sigma_vals = np.linspace(0.001, 3, 1000)
     expected_percents = sigma_to_percent(sigma_vals)
 
-    num_cores = max(1, os.cpu_count() // 4)
-    ctx = multiprocessing.get_context('fork')
-    with ctx.Pool(processes=num_cores) as pool:
-
-
-        index=0
-        autocorr=np.empty(max_n)
-        r_hat_conv=False
-        
-        old_tau=np.inf
-        sampler = emcee.EnsembleSampler(nwalkers,ndim,sigma_check,args=(x_known,y_known,e_known,sigma_vals,expected_percents),\
-                                        backend=backend,pool=pool)
-        for sample in sampler.sample(initial_positions,iterations=max_n,progress=MC_progress):
-            if sampler.iteration % 100 != 0:
-                continue
-        
-            tau=sampler.get_autocorr_time(tol=0)
-            autocorr[index]=np.mean(tau)
-            index+=1
-
-            chains=sampler.get_chain(discard=50,thin=5,flat=False)
-            if chains.shape[1]>1:
-                r_hat=calc_r_hat(chains)
-                r_hat_conv=np.all(r_hat<r_hat_tol)
-                if MC_progress:
-                    print("r_hat:\t\t"+str(r_hat))
-            
-            tau_conv=np.all((np.abs(old_tau-tau)/tau)<tau_tol)
-            if MC_progress:
-                print("tau_stability:\t"+str(np.abs(old_tau-tau)/tau))
-            
-            if r_hat_conv and tau_conv:
-                break
-            old_tau=tau
-
-    burnin = int(0.5 * sampler.iteration)
-    samples = sampler.get_chain(discard=burnin, thin=10, flat=True)
-
-    num_peaks, x, density = test_unimode(samples, dim=0)
-
-    print("MCMC converged. Checking for multimodal surface")
-
-    if MC_plotting:
-    
-        fig=corner.corner(samples,labels=labels[:-2])
-        fig.savefig(plotting_path+"/GP_corner_plot.png")
-    
-        plt.figure(figsize=(8,6))
-        plt.plot(x,density,label="KDE")
-        plt.title(f"KDE and Peak Detection (Peaks Found: {num_peaks})")
-        plt.xlabel("Dim 1")
-        plt.ylabel("Density")
-        plt.legend()
-        plt.savefig(plotting_path+"/GP_KDE_plots.png")
-        plt.show()
-
-    if num_peaks>1:
-        print("Multimodal distribution detected. Performing Clustering")
-
-        silhouette_scores=[]
-        K_values=range(2,11)
-
-        for K in K_values:
-            kmeans=KMeans(n_clusters=K)
-            cluster_labels=kmeans.fit_predict(samples)
-            score=silhouette_score(samples,cluster_labels)
-            silhouette_scores.append(score)
-
-        if MC_plotting:
-            plt.figure(figsize=(8,6))
-            plt.plot(K_values,silhouette_scores,"-o",color="blue")
-            plt.xlabel("Number of Clusters (K)")
-            plt.ylabel("Silhouette Score")
-            plt.title("Silhouette Score for Optimal K")
-            plt.grid(True)
-            plt.savefig(plotting_path+"/GP_silhouette_scores.png")
-            plt.show()
-
-        optimal_K=K_values[np.argmax(silhouette_scores)]
-        print(f"Optimal number of Clusters (K): {optimal_K}")
-
-        kmeans=KMeans(n_clusters=optimal_K)
-        cluster_labels=kmeans.fit_predict(samples)
-        modes=kmeans.cluster_centers_
-
-    else:
-        print("Single mode surface")
-        modes=np.mean(samples,axis=0,keepdims=True)
-
-    print("Modes of surface:")
-    print(modes)
-    
     def func_minimise(lengths):
-        return -sigma_check(lengths,x_known,y_known,e_known,sigma_vals,expected_percents)    
-    
-    bounds = [(1e-16, ub) for ub in upper_bounds]
-    score = np.inf
-    best = None
+        return -sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percents)
 
-    for j in range(len(modes)):
-        result = differential_evolution(func_minimise, bounds=bounds, strategy='best1bin', maxiter=1000)
-        if result.fun < score:
-            best = result.x
-            score = result.fun
+    def lhs(n, samples):
+        seg = np.linspace(0, 1, samples + 1)
+        temp = np.random.rand(samples, n) / samples
+        points = seg[:samples, None] + temp
+        np.random.shuffle(points)
+        return points
 
+    lhs_samples = lhs(ndim, num_particles)
+    positions = lower_bounds + lhs_samples * (upper_bounds - lower_bounds)
+    velocities = np.zeros_like(positions)
 
-    print("Optimal length scale found:")
-    print(best)
-    print("Value of loss function:")
-    print(score)
+    personal_best_positions = positions.copy()
+    personal_best_scores = np.array([func_minimise(p) for p in positions])
+    global_best_index = np.argmin(personal_best_scores)
+    global_best_position = personal_best_positions[global_best_index].copy()
+    global_best_score = personal_best_scores[global_best_index]
 
-    if os.path.exists(filename):
-        os.remove(filename)
+    c1, c2 = 1.5, 1.5
+    v_max = 0.2 * (upper_bounds - lower_bounds)
+    best_score_history = [global_best_score]
+    no_improve_counter = 0
 
-    return best
+    for i in range(max_iters):
+        w = 0.9 - (0.5 * i / max_iters)
 
+        r1 = np.random.rand(num_particles, ndim)
+        r2 = np.random.rand(num_particles, ndim)
+
+        velocities = (w * velocities +
+                      c1 * r1 * (personal_best_positions - positions) +
+                      c2 * r2 * (global_best_position - positions))
+        velocities = np.clip(velocities, -v_max, v_max)
+
+        positions += velocities
+        positions = np.clip(positions, lower_bounds, upper_bounds)
+
+        for j in range(num_particles):
+            score = func_minimise(positions[j])
+            if score < personal_best_scores[j]:
+                personal_best_scores[j] = score
+                personal_best_positions[j] = positions[j].copy()
+                if score < global_best_score:
+                    global_best_score = score
+                    global_best_position = positions[j].copy()
+                    no_improve_counter = 0
+        else:
+            no_improve_counter += 1
+
+        best_score_history.append(global_best_score)
+
+        if MC_progress and (i % 20 == 0 or i == max_iters - 1):
+            print(f"Iter {i:4d} | Best Score: {global_best_score:.6f}")
+
+        if no_improve_counter >= patience:
+            if MC_progress:
+                print(f"Stopping early at iteration {i} — no improvement for {patience} steps.")
+            break
+
+    if refine:
+        if MC_progress:
+            print("Refining with L-BFGS-B...")
+        result = minimize(func_minimise, global_best_position, method='L-BFGS-B', bounds=bounds)
+        global_best_position = result.x
+        global_best_score = result.fun
+
+    print("\nFinal optimal length scale:")
+    print(global_best_position)
+    print("Final loss:")
+    print(global_best_score)
+
+    return global_best_position
 
 
 ##############################################################################
-
 
 def test_unimode(samples, dim=0):
         
