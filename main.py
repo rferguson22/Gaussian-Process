@@ -130,8 +130,28 @@ def run_100():
 
 
 ########################################################################################################################
+def check_consistency():
+
+    df = pd.read_csv('gp_flow_runs.csv')
+
+    def extract_second_value(s):
+        values = s.strip('[]').split()
+        return float(values[1])
+
+    df['second_len_scale'] = df['len_scale'].apply(extract_second_value)
+
+    count = df['second_len_scale'].between(1.54, 1.56).sum()
+    mean_runtime = df['runtime_sec'].mean()
+
+    print(f"Mean runtime (sec): {mean_runtime:.4f}")
+    print(f"Count of values approximately equal to 1.55: {count}")
+
+    return
+
+################################################################################################################
 
 if __name__ == "__main__":
     #main()
-    run_100()
+    #run_100()
+    check_consistency()
 
