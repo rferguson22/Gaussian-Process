@@ -1,6 +1,5 @@
 import os
 
-# Limit all common thread pools to 2 threads (or 20% of cores you want)
 cores_to_use = 2
 os.environ["OMP_NUM_THREADS"] = str(cores_to_use)
 os.environ["OPENBLAS_NUM_THREADS"] = str(cores_to_use)
@@ -8,9 +7,6 @@ os.environ["MKL_NUM_THREADS"] = str(cores_to_use)
 os.environ["VECLIB_MAXIMUM_THREADS"] = str(cores_to_use)
 os.environ["NUMEXPR_NUM_THREADS"] = str(cores_to_use)
 os.environ["MKL_DYNAMIC"] = "FALSE"
-
-# Now import libraries that use threads
-
 
 
 import math
@@ -35,8 +31,9 @@ import pandas as pd
 from smt.sampling_methods import LHS
 
 from collections import Counter
+import time  
 
-from find_len_scales import len_scale_opt,calculate_std_percent,calculate_pull
+from find_len_scales import len_scale_swarm,len_scale_mcmc,calculate_std_percent,calculate_pull
 from convex_hull import fill_convex_hull,round_to_res
 from GP_func import GP
 
@@ -444,10 +441,7 @@ def coeff_pull_table():
 
     return coeff_pulls
 
-
 ###################################################################################################################
-
-import time  # Import time module
 
 def fit_pseudodata():
     '''
@@ -463,12 +457,11 @@ def fit_pseudodata():
     j = list(range(len(hypercube)))
 
     data_dict = dict({
-        "coefficients": j, "x_known": j, "y_known": j, "z_known": j, "e_known": j,
-        "hyperparameter": j, "0.67std_percent_known": j, "1std_percent_known": j,
+        "hyperparameter": j, "loss_score":j,"0.67std_percent_known": j, "1std_percent_known": j,
         "1.96std_percent_known": j, "0.67std_percent_fit_rand": j, "1std_percent_fit_rand": j,
         "1.96std_percent_fit_rand": j, "coeff_known_pull": j, "coeff_known": j,
         "coeff_GP_pull_rand": j, "coeff_GP_rand": j,
-        "runtime_seconds": j  # ← Add runtime column
+        "runtime_seconds": j  
     })
 
     data = pd.DataFrame(data_dict)
@@ -478,26 +471,28 @@ def fit_pseudodata():
 
     for k in range(len(hypercube)):
         print(k)
-        start_time = time.time()  # Start timing
 
-        coeff = [round(item, decimal_places) for item in hypercube[k]]
-        coeff_all = []
+        data_input=pd.read_csv("pseudodata_inputs.csv")
 
-        for i in range(len(coeff)):
-            gaus_mean = random.uniform(gaus_mean_limits[0], gaus_mean_limits[1])
-            gaus_width = random.uniform(gaus_width_limits[0], gaus_width_limits[1])
-            coeff_all.extend([coeff[i], gaus_mean, gaus_width])
+        data_example=data_input.loc[[k]]
 
-        coeff_all = np.array(coeff_all)
+        coeff_all=fix_array(data_example["coefficients"].to_numpy()[0])
+        x_known=fix_array(data_example["x_known"].to_numpy()[0])
+        y_known=fix_array(data_example["y_known"].to_numpy()[0])
+        z_known=fix_array(data_example["z_known"].to_numpy()[0])
+        e_known=fix_array(data_example["e_known"].to_numpy()[0])
+        z_func_known=fix_array(data_example["z_func_known"].to_numpy()[0])
 
-        xy_known = assign_known_parameters(energy_limits, measured_angle_limits,
-                                           datapoints_energies_measured, datapoints_angles_measured)
+        xy_known=np.stack((x_known,y_known))
 
         xy = create_convex_hull_boundary(xy_known, accuracy_e, accuracy_a)
         z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
-        z_known, e_known, z_func_known = generate_pseudo_data(xy_known, xy, z_func, eff_count_limits)
 
-        hyperpars = len_scale_opt(xy_known, z_known, e_known, True, False, None, "")
+        start_time = time.time()  
+        #hyperpars,score = len_scale_mcmc(xy_known, z_known, e_known, True, False, None, "")
+        hyperpars,score = len_scale_swarm(xy_known, z_known, e_known,True,None,"",40,300,100,False)
+        end_time = time.time() 
+
         z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars)
 
         xy_rand = get_xy_rand(xy, xy_known, accuracy_a, accuracy_e)
@@ -513,13 +508,8 @@ def fit_pseudodata():
             gaus_mean_limits, gaus_width_limits, coeff_all
         )
 
-        # Store results
-        data.at[k, "coefficients"] = coeff_all
-        data.at[k, "x_known"] = xy_known[0]
-        data.at[k, "y_known"] = xy_known[1]
-        data.at[k, "z_known"] = z_known
-        data.at[k, "e_known"] = e_known
         data.at[k, "hyperparameter"] = hyperpars
+        data.at[k, "loss_score"]=score
 
         data.at[k, "0.67std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 0.67)
         data.at[k, "1std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 1)
@@ -535,25 +525,24 @@ def fit_pseudodata():
         data.at[k, "coeff_GP_pull_rand"] = coeff_GP_pull_rand
         data.at[k, "coeff_GP_rand"] = coeff_GP_rand
 
-        end_time = time.time()  # End timing
-        data.at[k, "runtime_seconds"] = end_time - start_time  # Store runtime
+        data.at[k, "runtime_seconds"] = end_time - start_time  
 
-    data.to_csv('pseudodata_results.csv', index=False)
+    data.to_csv('pseudodata_mcmc.csv', index=False)
 
     return
 
-
 ################################################################################################################
+
+def fix_array(array):
+        return np.array([float(i) for i in array.strip("[]").split()])
+
+############################################################################################################
 
 def fit_to_func():
 
     '''
     Generates pseudodata testing graphs
     '''
-
-    def fix_array(array):
-        return np.array([float(i) for i in array.strip("[]").split()])
-
     data=pd.read_csv("pseudodata_results.csv")
 
     r=random.randint(0,len(data))    
@@ -658,13 +647,93 @@ def print_std():
 
     return
         
-
 #################################################################################################################
+
+def gen_pseudo_data():
+
+    xlimits = ([coeff_limits] * len(legendre_orders))
+    sampling = LHS(xlimits=np.array(xlimits), criterion='center')
+    hypercube = sampling(hypercube_len)
+
+    fraction = abs(coeff_limits[0] - coeff_limits[1]) / (2 * len(hypercube))
+    decimal_places = str(fraction)[::-1].find('.')
+
+    j = list(range(len(hypercube)))
+
+    data_dict = dict({"coefficients": j, "x_known": j, "y_known": j, "z_known": j, "e_known": j,"z_func_known":j})
+
+    data = pd.DataFrame(data_dict)
+
+    for item in data_dict.keys():
+        data[item] = data[item].astype("object")
+
+    for k in range(len(hypercube)):
+        print(k)
+
+        coeff = [round(item, decimal_places) for item in hypercube[k]]
+        coeff_all = []
+
+        for i in range(len(coeff)):
+            gaus_mean = random.uniform(gaus_mean_limits[0], gaus_mean_limits[1])
+            gaus_width = random.uniform(gaus_width_limits[0], gaus_width_limits[1])
+            coeff_all.extend([coeff[i], gaus_mean, gaus_width])
+
+        coeff_all = np.array(coeff_all)
+
+        xy_known = assign_known_parameters(energy_limits, measured_angle_limits,
+                                           datapoints_energies_measured, datapoints_angles_measured)
+
+        xy = create_convex_hull_boundary(xy_known, accuracy_e, accuracy_a)
+        z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
+        z_known, e_known, z_func_known = generate_pseudo_data(xy_known, xy, z_func, eff_count_limits)
+
+        data.at[k, "coefficients"] = coeff_all
+        data.at[k, "x_known"] = xy_known[0]
+        data.at[k, "y_known"] = xy_known[1]
+        data.at[k, "z_known"] = z_known
+        data.at[k, "e_known"] = e_known
+        data.at[k, "z_func_known"] = z_func_known
+       
+    data.to_csv('pseudodata_inputs.csv', index=False)
+
+    return
+
+################################################################################################################
+
+def plot_comparison():
+
+    file1 = "pseudodata_swarm.csv"
+    file2 = "pseudodata_mcmc.csv"  
+    directory="./Graphs/"
+
+    df1 = pd.read_csv(file1)
+    df2 = pd.read_csv(file2)
+
+    loss_diff = df1["loss_score"] - df2["loss_score"]
+    runtime_diff = df1["runtime_seconds"] - df2["runtime_seconds"]
+
+
+    plt.hist(loss_diff, bins=7)
+    plt.title("Difference in Loss Score (Swarm - MCMC)")
+    plt.savefig(directory+"loss_diff.png")
+    plt.close()
+
+    plt.hist(runtime_diff, bins=7)
+    plt.title("Difference in Runtime (Swarm - MCMC)")
+    plt.savefig(directory+"runtime_diff.png")
+
+    print(min(loss_diff))
+    print(max(loss_diff))
+
+
+    return
+
+#####################################################################################################################
 
 energy_limits=[1.2,2]
 angle_limits=[-1,1]
-datapoints_energies_measured=6
-datapoints_angles_measured=[8,10]
+datapoints_energies_measured=20
+datapoints_angles_measured=[15,20]
 gaus_mean_limits=[1.4,1.8]       
 gaus_width_limits=[0.25,0.75]
 measured_angle_limits=[-0.85,0.85]   
@@ -679,7 +748,11 @@ tau_tol=0.15
 
 ##########################################################################################################
 
+#gen_pseudo_data()
+
 fit_pseudodata()
+
+#plot_comparison()
 
 #coeff_pull_table()
 
