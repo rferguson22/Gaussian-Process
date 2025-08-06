@@ -489,9 +489,13 @@ def fit_pseudodata():
         z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
 
         start_time = time.time()  
-        #hyperpars,score = len_scale_mcmc(xy_known, z_known, e_known, True, False, None, "")
-        hyperpars,score = len_scale_swarm(xy_known, z_known, e_known,True,None,"",40,300,100,False)
+        hyperpars,score = len_scale_mcmc(xy_known, z_known, e_known, True, False, None, "")
+        end_title="pseudodata_mcmc.csv"
+        #hyperpars,score = len_scale_swarm(xy_known, z_known, e_known,True,None,"",40,300,100,False)
+        #end_title="pseudodata_swarm.csv"
         end_time = time.time() 
+
+        
 
         z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars)
 
@@ -527,7 +531,7 @@ def fit_pseudodata():
 
         data.at[k, "runtime_seconds"] = end_time - start_time  
 
-    data.to_csv('pseudodata_mcmc.csv', index=False)
+    data.to_csv(end_title, index=False)
 
     return
 
@@ -713,14 +717,14 @@ def plot_comparison():
     runtime_diff = df1["runtime_seconds"] - df2["runtime_seconds"]
 
 
-    plt.hist(loss_diff, bins=7)
-    plt.title("Difference in Loss Score (Swarm - MCMC)")
-    plt.savefig(directory+"loss_diff.png")
+    plt.hist(loss_diff, bins=7,range=[-5,40])
+    plt.title("Difference in Loss Score (Swarm - MCMC) - Larger dataset")
+    plt.savefig(directory+"loss_diff_larger.png")
     plt.close()
 
     plt.hist(runtime_diff, bins=7)
-    plt.title("Difference in Runtime (Swarm - MCMC)")
-    plt.savefig(directory+"runtime_diff.png")
+    plt.title("Difference in Runtime (Swarm - MCMC) - Larger dataset")
+    plt.savefig(directory+"runtime_diff_larger.png")
 
     print(min(loss_diff))
     print(max(loss_diff))
@@ -750,9 +754,9 @@ tau_tol=0.15
 
 #gen_pseudo_data()
 
-fit_pseudodata()
+#fit_pseudodata()
 
-#plot_comparison()
+plot_comparison()
 
 #coeff_pull_table()
 
