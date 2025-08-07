@@ -749,7 +749,7 @@ tau_tol=0.15
 
 #gen_pseudo_data()
 
-fit_pseudodata()
+#fit_pseudodata()
 
 #plot_comparison()
 

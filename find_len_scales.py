@@ -61,32 +61,54 @@ def sigma_to_percent(x):
 
 #######################################################################################################
 
-def ks_loss(lengths, x_known, y_known, e_known, lower_bounds,upper_bounds):
+def ks_loss(lengths, x_known, y_known, e_known, sigma_vals, _, lower_bounds):
+    '''
+    Computes the loss using a Kolmogorov-Smirnov test
+    between the normalised residuals ("pulls") and
+    a normal distribution with variance = 1/sigma^2.
+    '''
 
-    """
-    Loss function using the Kolmogorov–Smirnov test statistic to compare
-    the distribution of pulls to a standard normal distribution.
-    """
-
-    if np.any(lengths <= lower_bounds) or np.any(lengths>=upper_bounds):
-        return -1e12 
+    if np.any(lengths <= lower_bounds):
+        return -1e13
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
-    pulls = (y_fit - y_known) / np.maximum(e_fit, 1e-12)
+    
+    scaled_e = e_fit[:, None] * sigma_vals[None, :]  # shape (N_samples, N_sigma)
+    pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)  # same shape
+    
+    N = pulls.shape[0]
+    pulls_sorted = np.sort(pulls, axis=0)  # sort pulls column-wise
+    
+    # Empirical CDF values for KS test
+    i = np.arange(1, N + 1)[:, None]  # shape (N_samples, 1)
+    F_n1 = i / N
+    F_n2 = (i - 1) / N
 
-    D_statistic, _ = kstest(pulls, 'norm')  
+    # Theoretical CDF under H0 for each sigma:
+    sigma_vals_reshaped = sigma_vals[None, :]  # (1, N_sigma)
+    F_theoretical = norm.cdf(sigma_vals_reshaped * pulls_sorted)  # (N_samples, N_sigma)
 
-    return -D_statistic  
+    D1 = np.abs(F_n1 - F_theoretical)
+    D2 = np.abs(F_n2 - F_theoretical)
+    D = np.maximum(D1, D2)
+
+    ks_stats = np.max(D, axis=0)  # max difference per sigma
+    
+    loss = -np.sum(ks_stats)
+    return loss
 
 ##################################################################################################################
 
 def len_scale_mcmc(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name):  
+    '''
+    Finds the optimal length scale based on the KS-test loss function.
+    '''
 
     original_file_path = Path(out_file_name)
     plotting_path = original_file_path.parent
 
     ndim = len(x_known)
-    nwalkers = 30 * ndim
+    nwalkers = 20 * ndim
     max_n = 2000 * ndim
 
     r_hat_tol = 1.1
@@ -107,18 +129,21 @@ def len_scale_mcmc(x_known, y_known, e_known, MC_progress, MC_plotting, labels, 
 
     print("Beginning MCMC")
 
+    sigma_vals = np.linspace(0.001, 3, 1000) 
+
     num_cores = max(1, os.cpu_count() // 4)
     ctx = multiprocessing.get_context('fork')
     with ctx.Pool(processes=num_cores) as pool:
         index = 0
         autocorr = np.empty(max_n)
         r_hat_conv = False
-
+        
         old_tau = np.inf
         sampler = emcee.EnsembleSampler(
             nwalkers, ndim, ks_loss,
-            args=(x_known, y_known, e_known, lower_bounds,upper_bounds),
-            backend=backend, pool=pool
+            args=(x_known, y_known, e_known, sigma_vals, None, lower_bounds),
+            backend=backend,
+            pool=pool
         )
         for sample in sampler.sample(initial_positions, iterations=max_n, progress=MC_progress):
             if sampler.iteration % 100 != 0:
@@ -198,15 +223,16 @@ def len_scale_mcmc(x_known, y_known, e_known, MC_progress, MC_plotting, labels, 
 
     print("Modes of surface:")
     print(modes)
-
+    
     def func_minimise(lengths):
-        return -ks_loss(lengths, x_known, y_known, e_known, lower_bounds,upper_bounds)
-
-    best = None
+        return -ks_loss(lengths, x_known, y_known, e_known, sigma_vals, None, lower_bounds)    
+    
+    bounds = [(1e-16, ub) for ub in upper_bounds]
     score = np.inf
+    best = None
 
-    for mode in modes:
-        result = minimize(func_minimise, mode, bounds=endpoints, method='L-BFGS-B')
+    for j in range(len(modes)):
+        result = differential_evolution(func_minimise, bounds=bounds, strategy='best1bin', maxiter=1000)
         if result.fun < score:
             best = result.x
             score = result.fun
@@ -215,7 +241,6 @@ def len_scale_mcmc(x_known, y_known, e_known, MC_progress, MC_plotting, labels, 
     print(best)
     print("Value of loss function:")
     print(score)
-
 
     if os.path.exists(filename):
         os.remove(filename)
