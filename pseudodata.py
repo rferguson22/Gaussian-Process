@@ -33,7 +33,7 @@ from smt.sampling_methods import LHS
 from collections import Counter
 import time  
 
-from find_len_scales import len_scale_swarm,len_scale_mcmc,calculate_std_percent,calculate_pull
+from find_len_scales import len_scale_mcmc,calculate_std_percent,calculate_pull
 from convex_hull import fill_convex_hull,round_to_res
 from GP_func import GP
 
@@ -472,7 +472,7 @@ def fit_pseudodata():
     for k in range(len(hypercube)):
         print(k)
 
-        data_input=pd.read_csv("pseudodata_inputs.csv")
+        data_input=pd.read_csv("pseudodata_inputs1.csv")
 
         data_example=data_input.loc[[k]]
 
@@ -489,8 +489,7 @@ def fit_pseudodata():
         z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
 
         start_time = time.time()  
-        #hyperpars,score = len_scale_mcmc(xy_known, z_known, e_known, True, False, None, "")
-        hyperpars,score = len_scale_swarm(xy_known, z_known, e_known,True,None,"",40,300,100,False)
+        hyperpars,score = len_scale_mcmc(xy_known, z_known, e_known, True, False, None, "")
         end_time = time.time() 
 
         z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars)
@@ -527,7 +526,7 @@ def fit_pseudodata():
 
         data.at[k, "runtime_seconds"] = end_time - start_time  
 
-    data.to_csv('pseudodata_mcmc.csv', index=False)
+    data.to_csv('pseudodata_kstest.csv', index=False)
 
     return
 

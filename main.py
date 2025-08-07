@@ -18,6 +18,7 @@ from GP_fit import create_GP
 from calc_prob_surf import generate_prob_surf
 from read_in import expand_file_paths,check_data
 import time
+import matplotlib.pyplot as plt
 
 ###########################################################################################
 
@@ -127,9 +128,8 @@ def run_100():
 
         return
 
-
-
 ########################################################################################################################
+
 def check_consistency():
 
     df = pd.read_csv('gp_flow_runs.csv')
@@ -140,11 +140,14 @@ def check_consistency():
 
     df['second_len_scale'] = df['len_scale'].apply(extract_second_value)
 
-    count = df['second_len_scale'].between(1.54, 1.56).sum()
     mean_runtime = df['runtime_sec'].mean()
 
     print(f"Mean runtime (sec): {mean_runtime:.4f}")
-    print(f"Count of values approximately equal to 1.55: {count}")
+    
+    plt.hist(df['second_len_scale'], bins=7)
+    plt.title("Second len_scale value")
+    plt.savefig("len_scale_check.png")
+    plt.show()
 
     return
 

@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 from functools import reduce
 
-from find_len_scales import len_scale_swarm,len_scale_mcmc
+from find_len_scales import len_scale_mcmc
 from convex_hull import fill_convex_hull
 from GP_func import GP
 from read_in import read_yaml
@@ -20,19 +20,7 @@ def process_experiment(x_known, y_known, e_known, resolution, dim_labels, filena
         print(f"  Skipping experiment: no valid data points")
         return None
     
-
-    len_scale,score = len_scale_swarm(
-        x_known, y_known, e_known,
-        MC_progress=True,
-        labels=["x1", "x2", "x3"],
-        out_file_name="results/output.txt",
-        num_particles=40,
-        max_iters=300,
-        patience=50,
-        refine=False
-    )
-
-    #len_scale,score=len_scale_mcmc(x_known, y_known, e_known, True, False, None, "")
+    len_scale,score=len_scale_mcmc(x_known, y_known, e_known, True, False, None, "")
 
     x_fit = fill_convex_hull(x_known.T, resolution)
     y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
