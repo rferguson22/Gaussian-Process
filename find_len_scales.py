@@ -20,6 +20,7 @@ from scipy.optimize import minimize,differential_evolution
 from scipy.stats import norm
 
 from sklearn.mixture import GaussianMixture
+from functools import partial
 
 from GP_func import GP
 
@@ -61,19 +62,21 @@ def sigma_to_percent(x):
 
 ##################################################################################################################
 
-def len_scale_swarm(x_known, y_known, e_known, MC_progress=False, MC_plotting=False,
-                  labels=None, out_file_name="output.txt",
-                  num_particles=30, max_iters=300, patience=40, refine=True):
-    
-    '''
-    Enhanced PSO with:
-    - Dynamic inertia (exponential decay)
-    - Larger velocity bounds
-    - Noise injection to personal bests
-    - Soft restart if stagnated
-    - Optional local refinement (L-BFGS-B)
-    '''
+def evaluate_loss(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds):
+    return -sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds)
 
+#################################################################################################################
+
+def evaluate_loss_helper(args):
+    p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds = args
+    return evaluate_loss(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds)
+
+###################################################################################################################
+
+def len_scale_swarm(x_known, y_known, e_known, MC_progress=False, MC_plotting=False,
+                    labels=None, out_file_name="output.txt",
+                    num_particles=30, max_iters=300, patience=40, refine=True):
+    
     ndim = len(x_known)
     num_particles = 30
     max_iter = 500
@@ -91,70 +94,80 @@ def len_scale_swarm(x_known, y_known, e_known, MC_progress=False, MC_plotting=Fa
     expected_percents = sigma_to_percent(sigma_vals)
 
     def loss_func(lengths):
-        return -sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percents,lower_bounds)
+        return -sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds)
 
     sampling = LHS(xlimits=bounds_array, criterion="center")
     positions = sampling(num_particles)
     velocities = np.zeros_like(positions)
 
-    personal_best_positions = positions.copy()
-    personal_best_scores = np.array([loss_func(p) for p in positions])
+    with ProcessPoolExecutor() as executor:
+        # Evaluate initial personal bests once
+        args_iterable = [(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds) for p in positions]
+        personal_best_scores = list(executor.map(evaluate_loss_helper, args_iterable))
+        personal_best_scores = np.array(personal_best_scores)
+        personal_best_positions = positions.copy()
 
-    global_best_idx = np.argmin(personal_best_scores)
-    global_best_position = personal_best_positions[global_best_idx].copy()
-    global_best_score = personal_best_scores[global_best_idx]
+        global_best_idx = np.argmin(personal_best_scores)
+        global_best_position = personal_best_positions[global_best_idx].copy()
+        global_best_score = personal_best_scores[global_best_idx]
 
-    no_improve_counter = 0
+        no_improve_counter = 0
 
-    for i in range(max_iter):
-        w = max(0.4, 0.9 - i * inertia_decay)
-        c1 = c2 = 1.4
+        for i in range(max_iter):
+            w = max(0.4, 0.9 - i * inertia_decay)
+            c1 = c2 = 1.4
 
-        r1 = np.random.rand(num_particles, ndim)
-        r2 = np.random.rand(num_particles, ndim)
+            r1 = np.random.rand(num_particles, ndim)
+            r2 = np.random.rand(num_particles, ndim)
 
-        velocities = (w * velocities +
-                      c1 * r1 * (personal_best_positions - positions) +
-                      c2 * r2 * (global_best_position - positions))
-        velocities = np.clip(velocities, -v_max, v_max)
+            velocities = (w * velocities +
+                          c1 * r1 * (personal_best_positions - positions) +
+                          c2 * r2 * (global_best_position - positions))
+            velocities = np.clip(velocities, -v_max, v_max)
 
-        positions += velocities
-        positions = np.clip(positions, lower_bounds, upper_bounds)
+            positions += velocities
+            positions = np.clip(positions, lower_bounds, upper_bounds)
 
-        scores = np.array([loss_func(p) for p in positions])
+            args_iterable = [(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds) for p in positions]
+            scores = list(executor.map(evaluate_loss_helper, args_iterable))
+            scores = np.array(scores)
 
-        improved = scores < personal_best_scores
-        personal_best_positions[improved] = positions[improved]
-        personal_best_scores[improved] = scores[improved]
+            improved = scores < personal_best_scores
+            personal_best_positions[improved] = positions[improved]
+            personal_best_scores[improved] = scores[improved]
 
-        current_best_idx = np.argmin(personal_best_scores)
-        current_best_score = personal_best_scores[current_best_idx]
+            current_best_idx = np.argmin(personal_best_scores)
+            current_best_score = personal_best_scores[current_best_idx]
 
-        if current_best_score < global_best_score:
-            global_best_score = current_best_score
-            global_best_position = personal_best_positions[current_best_idx].copy()
-            no_improve_counter = 0
-        else:
-            no_improve_counter += 1
+            if current_best_score < global_best_score:
+                global_best_score = current_best_score
+                global_best_position = personal_best_positions[current_best_idx].copy()
+                no_improve_counter = 0
+            else:
+                no_improve_counter += 1
 
-        if MC_progress and i % 20 == 0:
-            print(f"Iter {i}: Best Score = {global_best_score:.6f}, No Improve = {no_improve_counter}")
+            if MC_progress and i % 20 == 0:
+                print(f"Iter {i}: Best Score = {global_best_score:.6f}, No Improve = {no_improve_counter}")
 
-        # Soft restart if no improvement
-        if no_improve_counter >= patience:
-            if MC_progress:
-                print(f"Stagnation at iter {i}, soft-restarting swarm...")
-            noise = 0.1 * (upper_bounds - lower_bounds)
-            personal_best_positions += np.random.uniform(-noise, noise, personal_best_positions.shape)
-            personal_best_positions = np.clip(personal_best_positions, lower_bounds, upper_bounds)
-            positions = personal_best_positions.copy()
-            velocities = np.zeros_like(positions)
-            personal_best_scores = np.array([loss_func(p) for p in personal_best_positions])
-            global_best_idx = np.argmin(personal_best_scores)
-            global_best_position = personal_best_positions[global_best_idx].copy()
-            global_best_score = personal_best_scores[global_best_idx]
-            no_improve_counter = 0
-            restart_count += 1
+            if no_improve_counter >= patience:
+                if MC_progress:
+                    print(f"Stagnation at iter {i}, soft-restarting swarm...")
+
+                noise = 0.1 * (upper_bounds - lower_bounds)
+                personal_best_positions += np.random.uniform(-noise, noise, personal_best_positions.shape)
+                personal_best_positions = np.clip(personal_best_positions, lower_bounds, upper_bounds)
+                positions = personal_best_positions.copy()
+                velocities = np.zeros_like(positions)
+
+                args_iterable = [(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds) for p in personal_best_positions]
+                personal_best_scores = list(executor.map(evaluate_loss_helper, args_iterable))
+                personal_best_scores = np.array(personal_best_scores)
+
+                global_best_idx = np.argmin(personal_best_scores)
+                global_best_position = personal_best_positions[global_best_idx].copy()
+                global_best_score = personal_best_scores[global_best_idx]
+                no_improve_counter = 0
+                restart_count += 1
 
     print("PSO completed.")
     print("Optimal length scale found:")
@@ -163,7 +176,7 @@ def len_scale_swarm(x_known, y_known, e_known, MC_progress=False, MC_plotting=Fa
     print(global_best_score)
     print(f"Total soft restarts: {restart_count}")
 
-    return global_best_position,global_best_score
+    return global_best_position, global_best_score
 
 ##############################################################################
 

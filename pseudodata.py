@@ -489,10 +489,10 @@ def fit_pseudodata():
         z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
 
         start_time = time.time()  
-        hyperpars,score = len_scale_mcmc(xy_known, z_known, e_known, True, False, None, "")
-        end_title="pseudodata_mcmc.csv"
-        #hyperpars,score = len_scale_swarm(xy_known, z_known, e_known,True,None,"",40,300,100,False)
-        #end_title="pseudodata_swarm.csv"
+        #hyperpars,score = len_scale_mcmc(xy_known, z_known, e_known, True, False, None, "")
+        #end_title="pseudodata_mcmc.csv"
+        hyperpars,score = len_scale_swarm(xy_known, z_known, e_known,True,None,"",40,300,100,False)
+        end_title="pseudodata_swarm.csv"
         end_time = time.time() 
 
         
@@ -707,7 +707,7 @@ def gen_pseudo_data():
 def plot_comparison():
 
     file1 = "pseudodata_swarm.csv"
-    file2 = "pseudodata_mcmc.csv"  
+    file2 = "pseudodata_mcmc1.csv"  
     directory="./Graphs/"
 
     df1 = pd.read_csv(file1)
@@ -724,7 +724,7 @@ def plot_comparison():
 
     plt.hist(runtime_diff, bins=7)
     plt.title("Difference in Runtime (Swarm - MCMC) - Larger dataset")
-    plt.savefig(directory+"runtime_diff_larger.png")
+    plt.savefig(directory+"runtime_diff_multithread.png")
 
     print(min(loss_diff))
     print(max(loss_diff))

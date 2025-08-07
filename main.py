@@ -153,5 +153,5 @@ def check_consistency():
 if __name__ == "__main__":
     #main()
     run_100()
-    check_consistency()
+    #check_consistency()
 
