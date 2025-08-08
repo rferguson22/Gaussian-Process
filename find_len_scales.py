@@ -61,14 +61,14 @@ def sigma_to_percent(x):
 
 #######################################################################################################
 
-def ks_loss(lengths, x_known, y_known, e_known, sigma_vals, _, lower_bounds):
+def ks_loss(lengths, x_known, y_known, e_known, sigma_vals, lower_bounds,upper_bounds):
     '''
     Computes the loss using a Kolmogorov-Smirnov test
     between the normalised residuals ("pulls") and
     a normal distribution with variance = 1/sigma^2.
     '''
 
-    if np.any(lengths <= lower_bounds):
+    if np.any(lengths <= lower_bounds) or np.any(lengths>=upper_bounds):
         return -1e13
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
@@ -94,8 +94,8 @@ def ks_loss(lengths, x_known, y_known, e_known, sigma_vals, _, lower_bounds):
 
     ks_stats = np.max(D, axis=0)  # max difference per sigma
     
-    loss = -np.sum(ks_stats)
-    return loss
+    loss = -np.mean(ks_stats)
+    return 10*loss
 
 ##################################################################################################################
 
@@ -108,11 +108,11 @@ def len_scale_mcmc(x_known, y_known, e_known, MC_progress, MC_plotting, labels, 
     plotting_path = original_file_path.parent
 
     ndim = len(x_known)
-    nwalkers = 20 * ndim
+    nwalkers = 40 * ndim
     max_n = 2000 * ndim
 
     r_hat_tol = 1.1
-    tau_tol = 0.2
+    tau_tol = 0.1
 
     diff = (np.max(x_known, axis=1) - np.min(x_known, axis=1))
     lower_bounds = 0.01 * diff
@@ -141,7 +141,7 @@ def len_scale_mcmc(x_known, y_known, e_known, MC_progress, MC_plotting, labels, 
         old_tau = np.inf
         sampler = emcee.EnsembleSampler(
             nwalkers, ndim, ks_loss,
-            args=(x_known, y_known, e_known, sigma_vals, None, lower_bounds),
+            args=(x_known, y_known, e_known, sigma_vals, lower_bounds,upper_bounds),
             backend=backend,
             pool=pool
         )
@@ -225,14 +225,14 @@ def len_scale_mcmc(x_known, y_known, e_known, MC_progress, MC_plotting, labels, 
     print(modes)
     
     def func_minimise(lengths):
-        return -ks_loss(lengths, x_known, y_known, e_known, sigma_vals, None, lower_bounds)    
+        return -ks_loss(lengths, x_known, y_known, e_known, sigma_vals,lower_bounds,upper_bounds)    
     
     bounds = [(1e-16, ub) for ub in upper_bounds]
     score = np.inf
     best = None
 
     for j in range(len(modes)):
-        result = differential_evolution(func_minimise, bounds=bounds, strategy='best1bin', maxiter=1000)
+        result=minimize(func_minimise,modes[j],method="Nelder-Mead")
         if result.fun < score:
             best = result.x
             score = result.fun
