@@ -149,12 +149,14 @@ def check_consistency():
     plt.savefig("len_scale_check.png")
     plt.show()
 
+    print(max(df['second_len_scale'])-min(df['second_len_scale']))
+
     return
 
 ################################################################################################################
 
 if __name__ == "__main__":
     #main()
-    run_100()
+    #run_100()
     check_consistency()
 
