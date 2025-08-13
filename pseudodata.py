@@ -33,7 +33,7 @@ from smt.sampling_methods import LHS
 from collections import Counter
 import time  
 
-from find_len_scales import len_scale_mcmc,calculate_std_percent,calculate_pull
+from find_len_scales import len_scale_ks,len_scale_sigma,calculate_std_percent,calculate_pull
 from convex_hull import fill_convex_hull,round_to_res
 from GP_func import GP
 
@@ -489,7 +489,10 @@ def fit_pseudodata():
         z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
 
         start_time = time.time()  
-        hyperpars,score = len_scale_mcmc(xy_known, z_known, e_known, True, False, None, "")
+        #hyperpars,score = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
+        #output_file="pseudodata_ks.csv"
+        hyperpars,score = len_scale_sigma(xy_known, z_known, e_known, True, False, None, "")
+        output_file="pseudodata_sigma.csv"
         end_time = time.time() 
 
         z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars)
@@ -526,7 +529,7 @@ def fit_pseudodata():
 
         data.at[k, "runtime_seconds"] = end_time - start_time  
 
-    data.to_csv('pseudodata_kstest.csv', index=False)
+    data.to_csv(output_file, index=False)
 
     return
 
@@ -633,7 +636,7 @@ def fit_to_func():
 
 def print_std():
 
-    data=pd.read_csv("pseudodata_results.csv")
+    data=pd.read_csv("pseudodata_sigma.csv")
 
     print(f"0.67 known: \t{np.mean(data['0.67std_percent_known'].to_numpy())}")
     print(f"0.67 GP: \t{np.mean(data['0.67std_percent_fit_rand'].to_numpy())}\n")
@@ -701,29 +704,41 @@ def gen_pseudo_data():
 
 def plot_comparison():
 
-    file1 = "pseudodata_swarm.csv"
-    file2 = "pseudodata_mcmc.csv"  
+    file1 = "pseudodata_ks.csv"
+    file2 = "pseudodata_sigma.csv"  
     directory="./Graphs/"
 
     df1 = pd.read_csv(file1)
     df2 = pd.read_csv(file2)
 
-    loss_diff = df1["loss_score"] - df2["loss_score"]
+    
+    def extract_value(s,i):
+        values = s.strip('[]').split()
+        return float(values[i])
+
+    df1['first_len_scale']  = df1['hyperparameter'].apply(lambda x: extract_value(x, 0))
+    df2['first_len_scale']  = df2['hyperparameter'].apply(lambda x: extract_value(x, 0))
+
+    df1['second_len_scale'] = df1['hyperparameter'].apply(lambda x: extract_value(x, 1))
+    df2['second_len_scale'] = df2['hyperparameter'].apply(lambda x: extract_value(x, 1))
+
+    first_diff = df1["first_len_scale"] - df2["first_len_scale"]
+    second_diff = df1["second_len_scale"] - df2["second_len_scale"]
     runtime_diff = df1["runtime_seconds"] - df2["runtime_seconds"]
 
+    plt.hist(first_diff, bins=7)
+    plt.title("Difference in First Length Scale (KS - Sigma)")
+    plt.savefig(directory+"first_diff.png")
+    plt.close()
 
-    plt.hist(loss_diff, bins=7)
-    plt.title("Difference in Loss Score (Swarm - MCMC)")
-    plt.savefig(directory+"loss_diff.png")
+    plt.hist(second_diff, bins=7)
+    plt.title("Difference in Second Length Scale (KS - Sigma)")
+    plt.savefig(directory+"second_diff.png")
     plt.close()
 
     plt.hist(runtime_diff, bins=7)
-    plt.title("Difference in Runtime (Swarm - MCMC)")
+    plt.title("Difference in Runtime (KS - Sigma)")
     plt.savefig(directory+"runtime_diff.png")
-
-    print(min(loss_diff))
-    print(max(loss_diff))
-
 
     return
 
@@ -757,4 +772,4 @@ tau_tol=0.15
 
 #fit_to_func()
 
-#print_std()
+print_std()
