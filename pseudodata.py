@@ -33,7 +33,7 @@ from smt.sampling_methods import LHS
 from collections import Counter
 import time  
 
-from find_len_scales import len_scale_ks,len_scale_sigma,calculate_std_percent,calculate_pull
+from find_len_scales import len_scale_ks,len_scale_sigma,calculate_std_percent,calculate_pull,sigma_check,sigma_to_percent,sigma_check_old
 from convex_hull import fill_convex_hull,round_to_res
 from GP_func import GP
 
@@ -472,7 +472,7 @@ def fit_pseudodata():
     for k in range(len(hypercube)):
         print(k)
 
-        data_input=pd.read_csv("pseudodata_inputs1.csv")
+        data_input=pd.read_csv("pseudodata_inputs.csv")
 
         data_example=data_input.loc[[k]]
 
@@ -488,12 +488,27 @@ def fit_pseudodata():
         xy = create_convex_hull_boundary(xy_known, accuracy_e, accuracy_a)
         z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
 
-        start_time = time.time()  
-        #hyperpars,score = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
-        #output_file="pseudodata_ks.csv"
-        hyperpars,score = len_scale_sigma(xy_known, z_known, e_known, True, False, None, "")
-        output_file="pseudodata_sigma.csv"
-        end_time = time.time() 
+        '''
+        lengths=np.array([0.1,0.1])
+        loss_old=sigma_check_old(lengths,xy_known,y_known,e_known)
+
+        sigma_vals = np.linspace(0.001, 3, 1000)
+        expected_percents = sigma_to_percent(sigma_vals)
+        loss_new=sigma_check(lengths, xy_known, y_known, e_known,sigma_vals,expected_percents)
+
+        print("old:",loss_old)
+        print("new:",loss_new)
+
+        return
+
+        '''
+
+        start_time = time.process_time()
+        # hyperpars, score = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
+        # output_file="pseudodata_ks.csv"
+        hyperpars, score = len_scale_sigma(xy_known, z_known, e_known, True, False, None, "")
+        output_file = "pseudodata_sigma.csv"
+        end_time = time.process_time()
 
         z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars)
 
@@ -520,6 +535,8 @@ def fit_pseudodata():
         data.at[k, "0.67std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 0.67)
         data.at[k, "1std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 1)
         data.at[k, "1.96std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 1.96)
+
+        print("95%:",calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 1.96))
 
         data.at[k, "coeff_known_pull"] = coeff_known_pull
         data.at[k, "coeff_known"] = coeff_known
@@ -678,7 +695,9 @@ def gen_pseudo_data():
         for i in range(len(coeff)):
             gaus_mean = random.uniform(gaus_mean_limits[0], gaus_mean_limits[1])
             gaus_width = random.uniform(gaus_width_limits[0], gaus_width_limits[1])
-            coeff_all.extend([coeff[i], gaus_mean, gaus_width])
+            coeff_all.append(coeff[i])
+            coeff_all.append(gaus_mean)
+            coeff_all.append(gaus_width)  
 
         coeff_all = np.array(coeff_all)
 
@@ -746,8 +765,8 @@ def plot_comparison():
 
 energy_limits=[1.2,2]
 angle_limits=[-1,1]
-datapoints_energies_measured=20
-datapoints_angles_measured=[15,20]
+datapoints_energies_measured=4
+datapoints_angles_measured=[4,10]
 gaus_mean_limits=[1.4,1.8]       
 gaus_width_limits=[0.25,0.75]
 measured_angle_limits=[-0.85,0.85]   
@@ -764,7 +783,7 @@ tau_tol=0.15
 
 #gen_pseudo_data()
 
-#fit_pseudodata()
+fit_pseudodata()
 
 #plot_comparison()
 
@@ -772,4 +791,4 @@ tau_tol=0.15
 
 #fit_to_func()
 
-print_std()
+#print_std()

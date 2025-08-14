@@ -21,7 +21,29 @@ from scipy.stats import norm
 
 from sklearn.mixture import GaussianMixture
 
-from GP_func import GP
+from GP_func import GP,GP1
+
+###################################################################################################
+
+def sigma_check_old(lengths,x_known,y_known,e_known):
+
+    '''
+    Calculates the loss function for a given length scale
+    '''
+
+    if min(lengths)<0:
+        return -10e12
+
+    y_fit,e_fit=GP1(x_known,y_known,e_known,x_known,lengths)
+    
+    sigma=np.linspace(0.001,3,1000)
+    total=0
+
+    for i in range(len(sigma)):
+        percent = sigma_to_percent(sigma[i])
+        total-=abs(calculate_std_percent(y_fit,y_known,e_fit,sigma[i])-percent)
+    
+    return total
 
 ###################################################################################################
 
@@ -32,6 +54,7 @@ def sigma_check(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,
     '''
 
     if np.any(lengths <= lower_bounds) or np.any(lengths>=upper_bounds):
+    #if np.any(lengths<=0):
         return -1e13
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
@@ -109,7 +132,7 @@ def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, ou
     plotting_path = original_file_path.parent
 
     ndim = len(x_known)
-    nwalkers = 40 * ndim
+    nwalkers = 8 * ndim
     max_n = 2000 * ndim
 
     r_hat_tol = 1.2
@@ -174,7 +197,7 @@ def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, ou
 
     print("MCMC converged.")
 
-    '''
+    
     num_peaks, x, density = test_unimode(samples, dim=0)
 
     print("MCMC converged. Checking for multimodal surface")
@@ -227,19 +250,20 @@ def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, ou
 
     print("Modes of surface:")
     print(modes)
-    '''
+    
 
 
     def func_minimise(lengths):
         return -ks_loss(lengths, x_known, y_known, e_known, sigma_vals, lower_bounds, upper_bounds)    
 
-    bounds = [(1e-16, ub) for ub in upper_bounds]
-
-    unique_samples = np.unique(samples, axis=0)
-    scores = np.array([func_minimise(s) for s in unique_samples])
-    best_idx = np.argmin(scores)
-    best = unique_samples[best_idx]
-    score = scores[best_idx]
+    score=1e12
+    best=[]
+    
+    for j in range(len(modes)):
+        result=minimize(func_minimise,modes[j],method="Nelder-Mead")
+        if result.fun<score:
+            best=result.x
+            score=result.fun
 
     print("Optimal length scale found:")
     print(best)
@@ -263,20 +287,30 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
     plotting_path = original_file_path.parent
 
     ndim = len(x_known)
-    nwalkers = 40 * ndim
+    nwalkers = 40* ndim
     max_n = 2000 * ndim
 
-    r_hat_tol = 1.2
-    tau_tol = 0.2
+    r_hat_tol = 1.1
+    tau_tol = 0.1
 
-    diff = (np.max(x_known, axis=1) - np.min(x_known, axis=1))
+    diff = np.abs(np.max(x_known, axis=1) - np.min(x_known, axis=1))/len(x_known.T)
     lower_bounds = 0.01 * diff
-    upper_bounds = 2.0 * diff
+    upper_bounds = 100 * diff
     endpoints = np.column_stack((lower_bounds, upper_bounds))
 
+
+    '''
+    endpoints=[]
+    for i in range(len(x_known)):
+        diff=(max(x_known[i])-min(x_known[i]))/len(x_known[i].T)
+        endpoints.append([1e-16,10*diff])
+    '''
+
+    
     sampling = LHS(xlimits=np.array(endpoints), criterion='center')
     initial_positions = sampling(nwalkers)
     initial_positions += 1e-5 * np.random.randn(*initial_positions.shape)
+
 
     filename = "backend.h5"
     backend = emcee.backends.HDFBackend(filename)
@@ -329,7 +363,6 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
 
     print("MCMC converged.")
 
-    
     num_peaks, x, density = test_unimode(samples, dim=0)
 
     print("MCMC converged. Checking for multimodal surface")
@@ -382,19 +415,14 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
 
     print("Modes of surface:")
     print(modes)
-    
+
 
 
     def func_minimise(lengths):
         return -sigma_check(lengths,x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds)  
 
-    '''
-    unique_samples = np.unique(samples, axis=0)
-    scores = np.array([func_minimise(s) for s in unique_samples])
-    best_idx = np.argmin(scores)
-    best = unique_samples[best_idx]
-    score = scores[best_idx]
-    '''
+
+
 
     score=1e12
     best=[]
@@ -404,6 +432,7 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
         if result.fun<score:
             best=result.x
             score=result.fun
+
 
     print("Optimal length scale found:")
     print(best)
