@@ -619,6 +619,23 @@ def fit_to_func():
 
 #################################################################################################################
 
+def print_std():
+
+    data=pd.read_csv("pseudodata_results.csv")
+
+    print(f"0.67 known: \t{np.mean(data['0.67std_percent_known'].to_numpy())}")
+    print(f"0.67 GP: \t{np.mean(data['0.67std_percent_fit_rand'].to_numpy())}\n")
+
+    print(f"1 known: \t{np.mean(data['1std_percent_known'].to_numpy())}")
+    print(f"1 GP: \t\t{np.mean(data['1std_percent_fit_rand'].to_numpy())}\n")
+
+    print(f"1.96 known: \t{np.mean(data['1.96std_percent_known'].to_numpy())}")
+    print(f"1.96 GP: \t{np.mean(data['1.96std_percent_fit_rand'].to_numpy())}\n")
+
+    return
+
+###########################################################################################################################
+
 energy_limits=[1.2,2]
 angle_limits=[-1,1]
 datapoints_energies_measured=4
@@ -641,4 +658,6 @@ tau_tol=0.15
 
 #coeff_pull_table()
 
-fit_to_func()
+#fit_to_func()
+
+print_std()
