@@ -96,9 +96,9 @@ def kernel_func(x1,x2,l):
     Calculates the RBF kernel between 2 sets of points with given length scales for each dimension
     '''
     
-    amp, ls = l[0], l[1:]
-    x1_scaled = x1 / ls[:, None]
-    x2_scaled = x2 / ls[:, None]
+    #amp, ls = l[0], l[1:]
+    x1_scaled = x1 / l[:, None]
+    x2_scaled = x2 / l[:, None]
 
     x1_sq = np.sum(x1_scaled**2, axis=0).reshape(-1, 1)
     x2_sq = np.sum(x2_scaled**2, axis=0).reshape(1, -1)
@@ -106,8 +106,8 @@ def kernel_func(x1,x2,l):
     sq_dist = x1_sq + x2_sq - 2 * np.dot(x1_scaled.T, x2_scaled)
     sq_dist = np.maximum(sq_dist, 0)  
 
-    return amp * np.exp(-0.5 * sq_dist)
-    #return np.exp(-0.5 * sq_dist)
+    #return amp * np.exp(-0.5 * sq_dist)
+    return np.exp(-0.5 * sq_dist)
 
 ###########################################################################################################
 

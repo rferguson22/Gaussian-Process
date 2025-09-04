@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from numpy.linalg import inv
+from numpy.linalg import inv,cholesky,solve
 import math
 
 from smt.sampling_methods import LHS
@@ -23,7 +23,7 @@ from scipy.linalg import solve
 
 from sklearn.mixture import GaussianMixture
 
-from GP_func import GP,GP1,GP_with_inverse
+from GP_func import GP,GP1,GP_with_inverse,kernel_func
 
 ###################################################################################################
 
@@ -99,14 +99,14 @@ def sigma_check_old(lengths,x_known,y_known,e_known,sigma,expected_vals,lower_bo
 
 ###################################################################################################
 
-def sigma_check1(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds):
+def sigma_check(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds):
 
     '''
     Computes the loss function:
     '''
 
-    #if np.any(lengths[1:] <= lower_bounds) or np.any(lengths[1:]>=upper_bounds):
-    if np.any(lengths[1:]<=0):
+    if np.any(lengths<= lower_bounds) or np.any(lengths>=upper_bounds):
+    #if np.any(lengths<=0):
         return -1e13
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
@@ -123,7 +123,7 @@ def sigma_check1(lengths, x_known, y_known, e_known,sigma_vals,expected_percents
 
 ##########################################################################################
 
-def sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
+def sigma_check_loo(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
     """
     LOO loss:
     - Predict each point from the GP trained on all others
@@ -143,21 +143,16 @@ def sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percent
     y_loo = y_known - (K_inv @ y_known) / diag_Kinv
     e_loo = 1.0 / np.sqrt(diag_Kinv)
 
-    # Pulls for all points and sigma_vals
     scaled_e = e_loo[:, None] * sigma_vals[None, :]
     pulls = (y_loo[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
 
-    # 0/1 containment indicator
     within = (np.abs(pulls) <= 1).astype(float)  # shape (n_points, n_sigma)
 
-    # Global fraction across all points
     fractions_within = np.mean(within, axis=0)  # shape (n_sigma,)
 
-    # Loss = sum of absolute deviations from expected percents
     loss = -np.sum(np.abs(fractions_within - expected_percents))
 
     return loss
-
 
 ##############################################################################################################
 
@@ -569,17 +564,22 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
     original_file_path = Path(out_file_name)
     plotting_path = original_file_path.parent
 
-    ndim = len(x_known)
+    ndim = 1
     nwalkers = 40* ndim
     max_n = 2000 * ndim
 
     r_hat_tol = 1.1
     tau_tol = 0.1
 
-    ranges = np.abs(np.max(x_known, axis=1) - np.min(x_known, axis=1))
-    lower_bounds = 0.01 * ranges/len(x_known.T)
-    upper_bounds = ranges
-    endpoints = np.column_stack((lower_bounds, upper_bounds))
+    ranges = np.max(x_known, axis=1) - np.min(x_known, axis=1)  # shape (1,)
+    ranges = np.where(ranges <= 0, 1.0, ranges)
+    lower_bounds = 0.01 * ranges / x_known.shape[1]  # (1,)
+    upper_bounds = ranges                            # (1,)
+    endpoints = np.column_stack((lower_bounds, upper_bounds))  # (1,2)
+
+    sampling = LHS(xlimits=endpoints, criterion='center')
+    initial_positions = sampling(nwalkers)  # shape (40,1)
+
 
     #endpoints,lower_bounds,upper_bounds = bounds(x_known, 0.5,2)
 
@@ -614,7 +614,7 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
         
         old_tau = np.inf
         sampler = emcee.EnsembleSampler(
-            nwalkers, ndim, ks_loss,
+            nwalkers, ndim, sigma_check,
             args=(x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds),
             backend=backend,
             pool=pool
@@ -783,3 +783,55 @@ def calculate_std_percent(y_fit,y_known,e_fit,std_coeff):
     
     return percent
 
+########################################################################################
+
+def nll_gp(lengths, x_known, y_known, e_known):
+    """
+    Compute the negative log-likelihood (NLL) for your GP using your existing kernel_func.
+    
+    lengths: array of length scales (ndim,)
+    x_known: (n_samples, n_features)
+    y_known: (n_samples,)
+    e_known: (n_samples,) observation noise
+    """
+    # Compute kernel matrix + noise
+    K = kernel_func(x_known, x_known, lengths) + np.diag(e_known**2)
+    
+    # Ensure positive-definite
+    try:
+        L = cholesky(K)
+    except np.linalg.LinAlgError:
+        return 1e25  # return large number if K is not PD
+
+    # Solve K^-1 y using Cholesky
+    alpha = solve(L.T, solve(L, y_known))
+    
+    # Compute log determinant
+    logdet = 2.0 * np.sum(np.log(np.diag(L)))
+    
+    # Negative log-likelihood
+    nll = 0.5 * y_known.dot(alpha) + 0.5 * logdet + 0.5 * len(y_known) * np.log(2*np.pi)
+    
+    return nll
+
+###########################################################################################
+
+def find_nll(x_known,y_known,e_known):
+
+    ndim = x_known.shape[1]
+    initial_guess = np.ones(ndim) * 1  
+
+    res = minimize(
+        nll_gp, 
+        initial_guess, 
+        args=(x_known, y_known, e_known), 
+        method='L-BFGS-B', 
+        bounds=[(1e-5, None)]*ndim
+    )
+
+    optimal_lengths = res.x
+    print("Optimal length scales:", optimal_lengths)
+
+    return optimal_lengths,res.fun
+
+#############################################################################################
