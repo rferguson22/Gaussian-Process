@@ -11,6 +11,7 @@ os.environ["MKL_DYNAMIC"] = "FALSE"
 
 import math
 import numpy as np
+import json
 
 from numpy import random
 
@@ -443,6 +444,33 @@ def coeff_pull_table():
 
 ###################################################################################################################
 
+def load_pseudodata(filename,k):
+    data = pd.read_csv(filename)
+
+    # JSON decode every column
+    for col in data.columns:
+        data[col] = data[col].apply(json.loads)
+
+    # Convert numeric arrays into numpy arrays
+    numeric_cols = ["coefficients", "x_known", "y_known", "z_known", "e_known", "z_func_known"]
+    for col in numeric_cols:
+        if col in data.columns:
+            data[col] = data[col].apply(np.array)
+
+    data_example = data.loc[[k]]
+
+    coeff_all    = data_example["coefficients"].to_numpy()[0]
+    x_known      = data_example["x_known"].to_numpy()[0]
+    y_known      = data_example["y_known"].to_numpy()[0]
+    z_known      = data_example["z_known"].to_numpy()[0]
+    e_known      = data_example["e_known"].to_numpy()[0]
+    z_func_known = data_example["z_func_known"].to_numpy()[0]
+
+    
+    return coeff_all,x_known,y_known,z_known,e_known,z_func_known
+
+########################################################################################################
+
 def fit_pseudodata():
     '''
     Fits pseudodata
@@ -469,19 +497,12 @@ def fit_pseudodata():
     for item in data_dict.keys():
         data[item] = data[item].astype("object")
 
-    for k in range(len(hypercube)):
+
+    for k in range(hypercube_len):
         print(k)
 
-        data_input=pd.read_csv("pseudodata_inputs.csv")
+        coeff_all,x_known,y_known,z_known,e_known,z_func_known=load_pseudodata("pseudodata_inputs.csv",k)
 
-        data_example=data_input.loc[[k]]
-
-        coeff_all=fix_array(data_example["coefficients"].to_numpy()[0])
-        x_known=fix_array(data_example["x_known"].to_numpy()[0])
-        y_known=fix_array(data_example["y_known"].to_numpy()[0])
-        z_known=fix_array(data_example["z_known"].to_numpy()[0])
-        e_known=fix_array(data_example["e_known"].to_numpy()[0])
-        z_func_known=fix_array(data_example["z_func_known"].to_numpy()[0])
 
         xy_known=np.stack((x_known,y_known))
 
@@ -504,8 +525,8 @@ def fit_pseudodata():
         '''
 
         start_time = time.process_time()
-        # hyperpars, score = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
-        # output_file="pseudodata_ks.csv"
+        #hyperpars, score = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
+        #output_file="pseudodata_ks.csv"
         hyperpars, score = len_scale_sigma(xy_known, z_known, e_known, True, False, None, "")
         output_file = "pseudodata_sigma.csv"
         end_time = time.process_time()
@@ -669,7 +690,10 @@ def print_std():
 #################################################################################################################
 
 def gen_pseudo_data():
+    print("Generating pseudodata")
 
+
+    # Create LHS sampling
     xlimits = ([coeff_limits] * len(legendre_orders))
     sampling = LHS(xlimits=np.array(xlimits), criterion='center')
     hypercube = sampling(hypercube_len)
@@ -679,10 +703,18 @@ def gen_pseudo_data():
 
     j = list(range(len(hypercube)))
 
-    data_dict = dict({"coefficients": j, "x_known": j, "y_known": j, "z_known": j, "e_known": j,"z_func_known":j})
+    data_dict = {
+        "coefficients": j,
+        "x_known": j,
+        "y_known": j,
+        "z_known": j,
+        "e_known": j,
+        "z_func_known": j,
+    }
 
     data = pd.DataFrame(data_dict)
 
+    # make sure all columns are object dtype
     for item in data_dict.keys():
         data[item] = data[item].astype("object")
 
@@ -701,21 +733,28 @@ def gen_pseudo_data():
 
         coeff_all = np.array(coeff_all)
 
-        xy_known = assign_known_parameters(energy_limits, measured_angle_limits,
-                                           datapoints_energies_measured, datapoints_angles_measured)
+        xy_known = assign_known_parameters(
+            energy_limits, measured_angle_limits,
+            datapoints_energies_measured, datapoints_angles_measured
+        )
 
         xy = create_convex_hull_boundary(xy_known, accuracy_e, accuracy_a)
         z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
-        z_known, e_known, z_func_known = generate_pseudo_data(xy_known, xy, z_func, eff_count_limits)
+        z_known, e_known, z_func_known = generate_pseudo_data(
+            xy_known, xy, z_func, eff_count_limits
+        )
 
-        data.at[k, "coefficients"] = coeff_all
-        data.at[k, "x_known"] = xy_known[0]
-        data.at[k, "y_known"] = xy_known[1]
-        data.at[k, "z_known"] = z_known
-        data.at[k, "e_known"] = e_known
-        data.at[k, "z_func_known"] = z_func_known
+        data.at[k, "coefficients"] = coeff_all.tolist()
+        data.at[k, "x_known"] = xy_known[0].tolist()
+        data.at[k, "y_known"] = xy_known[1].tolist()
+        data.at[k, "z_known"] = z_known.tolist()
+        data.at[k, "e_known"] = e_known.tolist()
+        data.at[k, "z_func_known"] = z_func_known.tolist()
        
-    data.to_csv('pseudodata_inputs.csv', index=False)
+    for item in data.columns:
+        data[item] = data[item].apply(lambda x: json.dumps(x))
+
+    data.to_csv("pseudodata_inputs.csv", index=False)
 
     return
 
@@ -791,4 +830,4 @@ fit_pseudodata()
 
 #fit_to_func()
 
-#print_std()
+print_std()

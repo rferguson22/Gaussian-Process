@@ -14,29 +14,81 @@ from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from scipy.stats import gaussian_kde,kstest
+from scipy.stats import gaussian_kde,kstest,ks_2samp
 from scipy.signal import find_peaks
 from scipy.optimize import minimize,differential_evolution
 from scipy.stats import norm
+from scipy.special import expit
+from scipy.linalg import solve
 
 from sklearn.mixture import GaussianMixture
 
-from GP_func import GP,GP1
+from GP_func import GP,GP1,GP_with_inverse
 
 ###################################################################################################
 
-def sigma_check_old(lengths,x_known,y_known,e_known):
+def sigma_check_loo_smooth(lengths, x_known, y_known, e_known, sharpness=20.0):
+
+    def kernel_func(x1, x2, l):
+        x1_scaled = x1 / l[:, None]
+        x2_scaled = x2 / l[:, None]
+        x1_sq = np.sum(x1_scaled**2, axis=0).reshape(-1, 1)
+        x2_sq = np.sum(x2_scaled**2, axis=0).reshape(1, -1)
+        sq_dist = x1_sq + x2_sq - 2 * np.dot(x1_scaled.T, x2_scaled)
+        sq_dist = np.maximum(sq_dist, 0)
+        return np.exp(-0.5 * sq_dist)
+
+    def gp_loo_predictions(x_known, y_known, e_known, lengths):
+        K = kernel_func(x_known, x_known, lengths) + np.diag(e_known**2)
+        K_inv = np.linalg.inv(K)
+        alpha = K_inv @ y_known
+        loo_var = 1.0 / np.diag(K_inv)
+        loo_mean = y_known - alpha / np.diag(K_inv)
+        loo_std = np.sqrt(np.maximum(loo_var, 1e-12))
+        return loo_mean, loo_std
+
+    def smooth_indicator(z, sharpness=20.0):
+        return expit(sharpness * (1.0 - np.abs(z)))
+
+    # Reject invalid lengths
+    if np.any(lengths <= 0):
+        return -1e13, None, None, None
+
+    y_pred, e_pred = gp_loo_predictions(x_known, y_known, e_known, lengths)
+
+    # Sigma grid
+    sigma_vals = np.linspace(0, 3, 1000)
+    expected_percents = sigma_to_percent(sigma_vals)
+
+    scaled_e = e_pred[:, None] * sigma_vals[None, :]
+    pulls = (y_pred[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
+
+    fractions_within = np.mean(smooth_indicator(pulls, sharpness=sharpness), axis=0)
+    loss = -np.sum((fractions_within - expected_percents)**2)
+
+    return loss, sigma_vals, fractions_within, expected_percents
+
+####################################################################################################
+
+def sigma_check_smooth_wrapper(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
+    if np.any(lengths <= lower_bounds) or np.any(lengths >= upper_bounds):
+        return -1e13
+    loss, _, _, _ = sigma_check_loo_smooth(lengths, x_known, y_known, e_known, sharpness=20.0)
+    return loss
+
+##################################################################################################
+
+def sigma_check_old(lengths,x_known,y_known,e_known,sigma,expected_vals,lower_bounds,upper_bounds):
 
     '''
     Calculates the loss function for a given length scale
     '''
 
-    if min(lengths)<0:
+    if np.any(lengths <= lower_bounds) or np.any(lengths>=upper_bounds):
         return -10e12
 
     y_fit,e_fit=GP1(x_known,y_known,e_known,x_known,lengths)
     
-    sigma=np.linspace(0.001,3,1000)
     total=0
 
     for i in range(len(sigma)):
@@ -47,14 +99,14 @@ def sigma_check_old(lengths,x_known,y_known,e_known):
 
 ###################################################################################################
 
-def sigma_check(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds):
+def sigma_check1(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds):
 
     '''
     Computes the loss function:
     '''
 
-    if np.any(lengths <= lower_bounds) or np.any(lengths>=upper_bounds):
-    #if np.any(lengths<=0):
+    #if np.any(lengths[1:] <= lower_bounds) or np.any(lengths[1:]>=upper_bounds):
+    if np.any(lengths[1:]<=0):
         return -1e13
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
@@ -71,6 +123,123 @@ def sigma_check(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,
 
 ##########################################################################################
 
+def sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
+    """
+    LOO loss:
+    - Predict each point from the GP trained on all others
+    - Count containment fractions in sigma bands
+    - Compare to expected percents
+    - Return sum of differences
+    """
+
+    if np.any(lengths <= lower_bounds) or np.any(lengths >= upper_bounds):
+        return -1e13
+
+    # GP inverse once (needed for fast LOO)
+    _, _, K_inv = GP_with_inverse(x_known, y_known, e_known, x_known, lengths)
+
+    # Vectorised LOO predictions
+    diag_Kinv = np.diag(K_inv)
+    y_loo = y_known - (K_inv @ y_known) / diag_Kinv
+    e_loo = 1.0 / np.sqrt(diag_Kinv)
+
+    # Pulls for all points and sigma_vals
+    scaled_e = e_loo[:, None] * sigma_vals[None, :]
+    pulls = (y_loo[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
+
+    # 0/1 containment indicator
+    within = (np.abs(pulls) <= 1).astype(float)  # shape (n_points, n_sigma)
+
+    # Global fraction across all points
+    fractions_within = np.mean(within, axis=0)  # shape (n_sigma,)
+
+    # Loss = sum of absolute deviations from expected percents
+    loss = -np.sum(np.abs(fractions_within - expected_percents))
+
+    return loss
+
+
+##############################################################################################################
+
+def sigma_check2(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
+    """
+    Computes the loss function using leave-one-out cross-validation,
+    summing the differences across all left-out points.
+    Optimized to avoid repeated copying of arrays.
+    """
+
+    if np.any(lengths[1:] <= 0):
+        return -1e13
+
+    n_points = len(y_known)
+    n_sigma = len(sigma_vals)
+    fractions_within_total = np.zeros(n_sigma)
+
+    # Precompute mask indices for leave-one-out
+    indices = np.arange(n_points)
+
+    for i in range(n_points):
+        mask = indices != i  # boolean mask to leave out point i
+
+        # Fit GP on all points except i
+        y_pred, e_pred = GP(
+            x_known[mask], y_known[mask], e_known[mask],
+            x_known[i:i+1], lengths
+        )  # predict only left-out point
+
+        scaled_e = e_pred[:, None] * sigma_vals[None, :]
+
+        # Compute pull for the left-out point
+        pulls = (y_pred[:, None] - y_known[i]) / np.maximum(scaled_e, 1e-12)
+
+        # Accumulate sum of fractions within 1 sigma
+        fractions_within_total += (np.abs(pulls) <= 1).astype(float).flatten()
+
+    # Loss: sum of absolute differences from expected percentages
+    loss = -np.sum(np.abs(fractions_within_total - expected_percents))
+
+    return loss
+
+######################################################################################################
+
+def sigma_check_sigmoid(lengths, x_known, y_known, e_known,
+                       sigma_vals, expected_percents,
+                       lower_bounds, upper_bounds, a=20.0):
+    
+    """
+    Smooth coverage loss for GP hyperparameter optimization.
+    
+    lengths: kernel hyperparameters
+    x_known, y_known, e_known: training data and observation noise
+    sigma_vals: array of sigma thresholds to check (e.g., 1000 values from 0-3)
+    expected_percents: theoretical coverage fractions for each threshold
+    lower_bounds, upper_bounds: bounds for hyperparameters
+    a: sigmoid steepness
+    """
+    
+    # Reject invalid hyperparameters
+    if np.any(lengths <= lower_bounds) or np.any(lengths >= upper_bounds):
+        return -1e13
+
+    # GP predictions
+    y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)  # e_fit includes noise
+
+    # Standardised residuals
+    z = (y_fit[:, None] - y_known[:, None]) / np.maximum(e_fit[:, None] * sigma_vals[None, :], 1e-12)
+
+    # Smooth indicator using sigmoid
+    S = expit(a * (1.0 - np.abs(z)))   # approx 1_{|z| <= 1}
+
+    # Empirical coverage at each sigma threshold
+    fractions_within = S.mean(axis=0)
+
+    # Smooth loss: mean squared difference from expected coverage
+    loss = -np.sum((fractions_within - expected_percents) ** 2)
+
+    return loss
+
+#####################################################################################################
+
 def sigma_to_percent(x):
 
     '''
@@ -84,14 +253,14 @@ def sigma_to_percent(x):
 
 #######################################################################################################
 
-def ks_loss(lengths, x_known, y_known, e_known, sigma_vals, lower_bounds,upper_bounds):
+def ks_loss1(lengths, x_known, y_known, e_known, sigma_vals, lower_bounds,upper_bounds):
     '''
     Computes the loss using a Kolmogorov-Smirnov test
     between the normalised residuals ("pulls") and
     a normal distribution with variance = 1/sigma^2.
     '''
 
-    if np.any(lengths <= lower_bounds) or np.any(lengths>=upper_bounds):
+    if np.any(lengths[1:] <= lower_bounds) or np.any(lengths[1:]>=upper_bounds):
         return -1e13
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
@@ -122,6 +291,34 @@ def ks_loss(lengths, x_known, y_known, e_known, sigma_vals, lower_bounds,upper_b
 
 ##################################################################################################################
 
+def convert_to_cdf(percent_within):
+
+    return 0.5 * ((percent_within / 100) + 1)
+
+##############################################################################################################
+
+def ks_loss(lengths,x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds):
+
+    if np.any(lengths <= lower_bounds) or np.any(lengths >= upper_bounds):
+    #if np.any(lengths<=0):
+        return -1e13
+
+    y_fit, e_fit = GP1(x_known, y_known, e_known, x_known, lengths)
+    
+    scaled_e = e_fit[:, None] * sigma_vals[None, :] 
+
+    pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
+
+    measured_percents = np.mean(np.abs(pulls) <= 1, axis=0)
+
+    #measured_cdf=convert_to_cdf(measured_percents)
+
+    D, _ = ks_2samp(expected_percents, measured_percents)
+    
+    return -D
+
+##############################################################################################################
+
 def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name):
 
     '''
@@ -132,15 +329,15 @@ def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, ou
     plotting_path = original_file_path.parent
 
     ndim = len(x_known)
-    nwalkers = 8 * ndim
+    nwalkers = 40 * ndim
     max_n = 2000 * ndim
 
-    r_hat_tol = 1.2
-    tau_tol = 0.2
+    r_hat_tol = 1.18
+    tau_tol = 0.15
 
-    diff = (np.max(x_known, axis=1) - np.min(x_known, axis=1))
-    lower_bounds = 0.01 * diff
-    upper_bounds = 2.0 * diff
+    ranges = np.abs(np.max(x_known, axis=1) - np.min(x_known, axis=1))
+    lower_bounds = 0.01 * ranges/len(x_known.T)
+    upper_bounds = ranges
     endpoints = np.column_stack((lower_bounds, upper_bounds))
 
     sampling = LHS(xlimits=np.array(endpoints), criterion='center')
@@ -154,6 +351,9 @@ def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, ou
     print("Beginning MCMC")
 
     sigma_vals = np.linspace(0.001, 3, 1000) 
+    expected_percents = sigma_to_percent(sigma_vals)
+    #expected_cdf=convert_to_cdf(expected_percents)
+
 
     num_cores = max(1, os.cpu_count() // 4)
     ctx = multiprocessing.get_context('fork')
@@ -165,7 +365,7 @@ def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, ou
         old_tau = np.inf
         sampler = emcee.EnsembleSampler(
             nwalkers, ndim, ks_loss,
-            args=(x_known, y_known, e_known, sigma_vals, lower_bounds, upper_bounds),
+            args=(x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds, upper_bounds),
             backend=backend,
             pool=pool
         )
@@ -254,7 +454,7 @@ def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, ou
 
 
     def func_minimise(lengths):
-        return -ks_loss(lengths, x_known, y_known, e_known, sigma_vals, lower_bounds, upper_bounds)    
+        return -ks_loss(lengths,x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds, upper_bounds)    
 
     score=1e12
     best=[]
@@ -277,6 +477,89 @@ def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, ou
 
 ###########################################################################################################
 
+def bounds(X, lower_frac=0.1, upper_frac=10.0):
+
+    """
+    Compute sensible lower and upper bounds for RBF kernel length scales
+    using the median pairwise distance heuristic (vectorised).
+
+    Parameters
+    ----------
+    X : array-like of shape (ndims, nsamples)
+        Input data (features along rows, samples along columns).
+    lower_frac : float, default=0.1
+        Fraction of the median distance to use as the lower bound.
+    upper_frac : float, default=10.0
+        Multiple of the median distance to use as the upper bound.
+
+    Returns
+    -------
+    bounds : np.ndarray of shape (ndims, 2)
+        Array of (lower_bound, upper_bound) for each dimension.
+    """
+    X = np.asarray(X)  # (ndims, nsamples)
+    ndims, nsamples = X.shape
+
+    # Pairwise absolute differences: (ndims, nsamples, nsamples)
+    diffs = np.abs(X[:, :, None] - X[:, None, :])
+
+    # Set diagonals to NaN to ignore self-distances
+    idx = np.arange(nsamples)
+    diffs[:, idx, idx] = np.nan
+
+    # Median per dimension (ignoring NaNs)
+    median_dist = np.nanmedian(diffs, axis=(1, 2))
+
+    # Compute bounds
+    lower = lower_frac * median_dist
+    upper = upper_frac * median_dist
+
+    return np.stack([lower, upper], axis=1),lower,upper
+
+##########################################################################################################
+
+def bounds1(X, lower_frac=0.05, upper_frac=1.0):
+
+    """
+    Compute sensible lower and upper bounds for RBF kernel length scales.
+    
+    Parameters:
+        X : array-like of shape (ndims, nsamples)
+            Input data.
+        lower_frac : float
+            Fraction of minimum spacing to use as lower bound (default 0.05).
+        upper_frac : float
+            Fraction of data range to use as upper bound (default 2.0).
+
+    Returns:
+        bounds : np.ndarray of shape (ndims, 2)
+            Array of (lower_bound, upper_bound) for each dimension.
+    """
+    X = np.asarray(X)
+    ndims, nsamples = X.shape
+
+    # Compute pairwise distances for all dimensions
+    # Expand dims: X[:, :, None] - X[:, None, :] gives shape (ndims, nsamples, nsamples)
+    diffs = np.abs(X[:, :, None] - X[:, None, :])
+
+    # Set diagonal to np.inf to ignore zero distances
+    np.fill_diagonal(diffs.reshape(-1, nsamples), np.inf)
+
+    # Minimum non-zero distance per dimension
+    min_dist = np.min(diffs, axis=(1, 2))
+
+    # Data range per dimension
+    data_range = X.max(axis=1) - X.min(axis=1)
+
+    lower = lower_frac * min_dist
+    upper = upper_frac * data_range
+
+    endpoints = np.stack([lower, upper], axis=1)
+
+    return endpoints,lower,upper
+
+##########################################################################################################
+
 def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name):
     
     '''
@@ -293,11 +576,12 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
     r_hat_tol = 1.1
     tau_tol = 0.1
 
-    diff = np.abs(np.max(x_known, axis=1) - np.min(x_known, axis=1))/len(x_known.T)
-    lower_bounds = 0.01 * diff
-    upper_bounds = 100 * diff
+    ranges = np.abs(np.max(x_known, axis=1) - np.min(x_known, axis=1))
+    lower_bounds = 0.01 * ranges/len(x_known.T)
+    upper_bounds = ranges
     endpoints = np.column_stack((lower_bounds, upper_bounds))
 
+    #endpoints,lower_bounds,upper_bounds = bounds(x_known, 0.5,2)
 
     '''
     endpoints=[]
@@ -330,7 +614,7 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
         
         old_tau = np.inf
         sampler = emcee.EnsembleSampler(
-            nwalkers, ndim, sigma_check,
+            nwalkers, ndim, ks_loss,
             args=(x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds),
             backend=backend,
             pool=pool
@@ -358,14 +642,14 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
                 break
             old_tau = tau
 
-    burnin = int(0.5 * sampler.iteration)
+    burnin = int(0.4 * sampler.iteration)
     samples = sampler.get_chain(discard=burnin, thin=10, flat=True)
 
     print("MCMC converged.")
 
     num_peaks, x, density = test_unimode(samples, dim=0)
 
-    print("MCMC converged. Checking for multimodal surface")
+    print("Checking for multimodal surface")
 
     if MC_plotting:
         fig = corner.corner(samples, labels=labels[:-2])
@@ -420,9 +704,6 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
 
     def func_minimise(lengths):
         return -sigma_check(lengths,x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds)  
-
-
-
 
     score=1e12
     best=[]
