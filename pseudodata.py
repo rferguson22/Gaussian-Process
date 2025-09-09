@@ -419,10 +419,10 @@ def fit_pseudodata():
         start_time = time.process_time()
         #hyperpars, score = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
         #output_file="pseudodata_ks.csv"
-        #hyperpars, score = len_scale_sigma(x_known, y_known, e_known, True, False, None, "")
-        #output_file = "pseudodata_sigma50.csv"
-        hyperpars,score=find_nll(x_known.T,y_known,e_known)
-        output_file = "pseudodata_nll10.csv"
+        hyperpars, score = len_scale_sigma(x_known, y_known, e_known, True, False, None, "")
+        output_file = "pseudodata_sigma_quad.csv"
+        #hyperpars,score=find_nll(x_known.T,y_known,e_known)
+        #output_file = "pseudodata_nll10.csv"
         end_time = time.process_time()
 
         y_fit, e_fit = GP(x_known, y_known, e_known, x, hyperpars)
@@ -458,7 +458,7 @@ def fit_pseudodata():
 
         data.at[k, "runtime_seconds"] = end_time - start_time  
 
-        plotting_check(x_known.flatten(),y_known,e_known,x,y_func,y_fit,e_fit,x_rand,y_func_rand,k,percent95)
+        plotting_check(x_known.flatten(),y_known,e_known,x,y_func,y_fit,e_fit,x_rand,y_fit_rand,k,percent95)
 
     data.to_csv(output_file, index=False)
 
@@ -567,7 +567,7 @@ def fit_to_func():
 
 def print_std():
 
-    data=pd.read_csv("pseudodata_nll10.csv")
+    data=pd.read_csv("pseudodata_sigma_quad.csv")
 
     print(f"0.67 known: \t{np.mean(data['0.67std_percent_known'].to_numpy())}")
     print(f"0.67 GP: \t{np.mean(data['0.67std_percent_fit_rand'].to_numpy())}\n")
@@ -709,7 +709,7 @@ tau_tol=0.15
 
 #gen_pseudo_data()
 
-fit_pseudodata()
+#fit_pseudodata()
 
 #plot_comparison()
 

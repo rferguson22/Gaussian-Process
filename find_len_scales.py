@@ -113,6 +113,10 @@ def sigma_check(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,
     
     scaled_e = e_fit[:, None] * sigma_vals[None, :] 
 
+    total_uncertainty = np.sqrt((scaled_e)**2 + e_known[:, None]**2)
+
+    #pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(total_uncertainty, 1e-12)
+
     pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
 
     fractions_within = np.mean(np.abs(pulls) <= 1, axis=0)
