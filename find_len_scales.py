@@ -113,7 +113,7 @@ def sigma_check(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,
     
     scaled_e = e_fit[:, None] * sigma_vals[None, :] 
 
-    total_uncertainty = np.sqrt((scaled_e)**2 + e_known[:, None]**2)
+    #total_uncertainty = np.sqrt((scaled_e)**2 + e_known[:, None]**2)
 
     #pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(total_uncertainty, 1e-12)
 
@@ -559,6 +559,28 @@ def bounds1(X, lower_frac=0.05, upper_frac=1.0):
 
 ##########################################################################################################
 
+def log_prob_fn(params, x_known, y_known, e_known, sigma_vals, expected_percents, lengths_lower, lengths_upper):
+
+    """
+    MCMC log-probability using the full hyperparameter vector.
+    """
+    n_features = x_known.shape[0]
+    lengths = params[:n_features]
+    w_rbf = params[n_features]
+    w_linear = params[n_features + 1]
+    w_poly = params[n_features + 2:]
+
+    # enforce bounds
+    if np.any(lengths <= lengths_lower) or np.any(lengths >= lengths_upper):
+        return -1e13
+    if np.any(np.array([w_rbf, w_linear] + list(w_poly)) < 0):
+        return -1e13
+
+    return -sigma_check(params, x_known, y_known, e_known, sigma_vals, expected_percents)
+
+
+##########################################################################################################
+
 def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name):
     
     '''
@@ -575,8 +597,8 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
     r_hat_tol = 1.1
     tau_tol = 0.1
 
-    ranges = np.max(x_known, axis=1) - np.min(x_known, axis=1)  # shape (1,)
-    ranges = np.where(ranges <= 0, 1.0, ranges)
+    x_known = np.atleast_2d(x_known)  # ensures x_known has shape (1, N) if it was 1D
+    ranges = np.max(x_known, axis=1) - np.min(x_known, axis=1)
     lower_bounds = 0.01 * ranges / x_known.shape[1]  # (1,)
     upper_bounds = ranges                            # (1,)
     endpoints = np.column_stack((lower_bounds, upper_bounds))  # (1,2)

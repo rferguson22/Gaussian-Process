@@ -107,43 +107,39 @@ def generate_pseudo_func(x,coeff,legendre_orders):
         y_func += c * legval(x, poly_coeffs)
     
     # scaling step (same as before)
-    xs = np.linspace(0.6, 0.9, 1000)
-    a = xs * (1 - xs)
-    p = a / np.sum(a)
-    scale = np.random.choice(xs, p=p) / max(abs(y_func))
-    y_func *= scale
-    coeff = np.array(coeff) * scale
+    if max(abs(y_func))>=1:
+        xs = np.linspace(0.6, 0.9, 1000)
+        a = xs * (1 - xs)
+        p = a / np.sum(a)
+        scale = np.random.choice(xs, p=p) / max(abs(y_func))
+        y_func *= scale
+        coeff = np.array(coeff) * scale
 
     return y_func, coeff
 
 #################################################################################################################
 
-def generate_pseudo_data(x_known,x,y_func,eff_count_limits):
+def generate_pseudo_data(x_known,x,y_func,eff_count_limits,k):
 
     '''
     Generates the pseduodata value
     '''
+    y_known, e_known, y_func_known = [], [], []
 
-    y_known,e_known,y_func_known=[],[],[]   
-    
 
     for i in range(len(x_known)):
 
-        arg=np.argwhere(x_known[i]==x)
-           
-        a=y_func[arg]
+        idx = np.where(x == x_known[i])[0]
+        a = y_func[idx[0]]
 
-        effective_count= np.random.uniform(low=eff_count_limits[0], high=eff_count_limits[1])
+        effective_count = np.random.uniform(low=eff_count_limits[0], high=eff_count_limits[1])
+        N_total = poisson.rvs(effective_count)
 
-        n_plus=0.5*effective_count*(1+a)
-        n_minus=0.5*effective_count*(1-a)
+        N_plus = np.random.binomial(N_total, (1 + a)/2)
+        N_minus = N_total - N_plus
 
-        N_plus=poisson.rvs(n_plus)
-        N_minus=poisson.rvs(n_minus)
-
-        y=(N_plus-N_minus)/(N_plus+N_minus)
-        e=(2/((N_plus+N_minus)**2))*np.sqrt(N_plus*N_minus*(N_plus+N_minus))
-
+        y = (N_plus - N_minus) / N_total
+        e = np.sqrt((1 - y**2) / N_total)
 
         y_known.append(y)
         e_known.append(e)
@@ -153,7 +149,6 @@ def generate_pseudo_data(x_known,x,y_func,eff_count_limits):
     y_known=np.array(y_known)
     e_known=np.array(e_known) 
     y_func_known=np.array(y_func_known)
-    
         
     return y_known,e_known,y_func_known
 
@@ -394,7 +389,7 @@ def fit_pseudodata():
     for k in range(hypercube_len):
         print(k)
 
-        coeff_all,x_known,y_known,e_known,y_func_known=load_pseudodata("pseudodata_inputs50.csv",k)
+        coeff_all,x_known,y_known,e_known,y_func_known=load_pseudodata("pseudodata_inputs10.csv",k)
 
         x = create_convex_hull_boundary(x_known,accuracy_a)
         y_func, coeff_all = generate_pseudo_func(x, coeff_all, legendre_orders)
@@ -414,13 +409,13 @@ def fit_pseudodata():
 
         '''
 
-        x_known=x_known.reshape((1,len(x_known)))
-
+      
+        
         start_time = time.process_time()
         #hyperpars, score = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
         #output_file="pseudodata_ks.csv"
         hyperpars, score = len_scale_sigma(x_known, y_known, e_known, True, False, None, "")
-        output_file = "pseudodata_sigma_quad.csv"
+        output_file = "pseudodata_sigma.csv"
         #hyperpars,score=find_nll(x_known.T,y_known,e_known)
         #output_file = "pseudodata_nll10.csv"
         end_time = time.process_time()
@@ -459,6 +454,7 @@ def fit_pseudodata():
         data.at[k, "runtime_seconds"] = end_time - start_time  
 
         plotting_check(x_known.flatten(),y_known,e_known,x,y_func,y_fit,e_fit,x_rand,y_fit_rand,k,percent95)
+        
 
     data.to_csv(output_file, index=False)
 
@@ -567,7 +563,7 @@ def fit_to_func():
 
 def print_std():
 
-    data=pd.read_csv("pseudodata_sigma_quad.csv")
+    data=pd.read_csv("pseudodata_sigma.csv")
 
     print(f"0.67 known: \t{np.mean(data['0.67std_percent_known'].to_numpy())}")
     print(f"0.67 GP: \t{np.mean(data['0.67std_percent_fit_rand'].to_numpy())}\n")
@@ -620,7 +616,8 @@ def gen_pseudo_data():
 
         x = create_convex_hull_boundary(x_known,accuracy_a)
         y_func, coeff = generate_pseudo_func(x, coeff, legendre_orders)
-        y_known, e_known, y_func_known = generate_pseudo_data(x_known,x, y_func, eff_count_limits)
+
+        y_known, e_known, y_func_known = generate_pseudo_data(x_known,x, y_func, eff_count_limits,k)
 
         data.at[k, "coefficients"] = coeff.tolist()
         data.at[k, "x_known"] = x_known.tolist()
@@ -631,7 +628,7 @@ def gen_pseudo_data():
     for item in data.columns:
         data[item] = data[item].apply(lambda x: json.dumps(x))
 
-    data.to_csv("pseudodata_inputs.csv", index=False)
+    data.to_csv("pseudodata_inputs"+str(datapoints_angles_measured)+".csv", index=False)
 
     return
 
@@ -686,6 +683,7 @@ def plotting_check(x_known,y_known,e_known,x,y_func,y_fit,e_fit,x_rand,y_rand,gr
     plt.fill_between(x,y_fit-e_fit,y_fit+e_fit,label="Standard Deviation",alpha=0.1)
     plt.errorbar(x_known,y_known,yerr=e_known,fmt="x",alpha=0.7,ecolor="black",color="black",label="Known Points")
     plt.scatter(x_rand,y_rand,label="Random Points")
+    plt.legend()
     plt.title("2sigma of random points="+str(percent95))
     plt.savefig("pseudodata_graphs/Graph"+str(graph_num)+".png")
     plt.close()
@@ -694,8 +692,57 @@ def plotting_check(x_known,y_known,e_known,x,y_func,y_fit,e_fit,x_rand,y_rand,gr
 
 ##################################################################################################################
 
+def testing_asym():
+
+    a=np.linspace(-1, 1, 1000)
+
+    effective_count= 200
+
+    N_total = poisson.rvs(effective_count)
+    N_plus = np.random.binomial(N_total, (1+a)/2)
+    N_minus = N_total - N_plus
+    y = (N_plus - N_minus) / N_total
+    
+    plt.scatter(a,y-a)
+    plt.title("Effective count="+str(effective_count))
+    plt.savefig("asym_testing"+str(effective_count)+".png")
+
+
+    return
+
+##################################################################################################################
+
+def plotting_asym():
+
+    data = pd.read_csv("pseudodata_inputs.csv")
+
+    # Parse JSON columns back into lists
+    for col in ["y_known", "y_func_known"]:
+        data[col] = data[col].apply(json.loads)
+
+    # Compute the signed differences for each set
+    signed_diffs = []
+    for i, row in data.iterrows():
+        y_known = np.array(row["y_known"])
+        y_func_known = np.array(row["y_func_known"])
+        diff = y_known - y_func_known
+        signed_diffs.extend(diff)  # flatten all diffs into a single list
+
+    # Plot histogram
+    plt.figure(figsize=(8,5))
+    plt.hist(signed_diffs, bins=30, edgecolor='black')
+    plt.xlabel("y_known - y_func")
+    plt.title("Differences Between Pseudodata and True Function")
+    plt.grid(True, alpha=0.3)
+    plt.savefig("average_diff.png")
+    plt.show()
+
+    return
+
+################################################################################################################
+
 angle_limits=[-1,1]
-datapoints_angles_measured=50
+datapoints_angles_measured=10
 measured_angle_limits=[-0.85,0.85]   
 coeff_limits=[-1,1]
 eff_count_limits=[200,1000]
@@ -707,9 +754,9 @@ tau_tol=0.15
 
 ##########################################################################################################
 
-#gen_pseudo_data()
+gen_pseudo_data()
 
-#fit_pseudodata()
+fit_pseudodata()
 
 #plot_comparison()
 
@@ -718,3 +765,7 @@ tau_tol=0.15
 #fit_to_func()
 
 print_std()
+
+#testing_asym()
+
+#plotting_asym()
