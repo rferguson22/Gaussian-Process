@@ -8,7 +8,6 @@ os.environ["VECLIB_MAXIMUM_THREADS"] = str(cores_to_use)
 os.environ["NUMEXPR_NUM_THREADS"] = str(cores_to_use)
 os.environ["MKL_DYNAMIC"] = "FALSE"
 
-
 import math
 import numpy as np
 import json
@@ -26,6 +25,7 @@ from iminuit import Minuit
 from iminuit.cost import LeastSquares
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import math
 import pandas as pd 
@@ -34,7 +34,8 @@ from smt.sampling_methods import LHS
 from collections import Counter
 import time  
 
-from find_len_scales import len_scale_ks,len_scale_sigma,calculate_std_percent,calculate_pull,sigma_check,sigma_to_percent,sigma_check_old
+from find_len_scales import len_scale_ks,calculate_std_percent,calculate_pull,\
+    sigma_check,sigma_to_percent,sigma_check_old,len_scale_swarm
 from convex_hull import fill_convex_hull,round_to_res
 from GP_func import GP
 
@@ -184,15 +185,16 @@ def generate_pseudo_func(xy,coeff_all,legendre_orders):
             z_func[i]+=b
             j+=3
 
-    x=np.linspace(0.6,0.9,1000)
-    a=x*(1-x)
-    p=a/np.sum(a)
-    scale=np.random.choice(x,p=p)/max(abs(z_func))
-    z_func*=scale
-    k=0
-    while k<len(coeff_all):
-        coeff_all[k]*=scale
-        k+=3
+    if max(abs(z_func))>1:
+        x=np.linspace(0.6,0.9,1000)
+        a=x*(1-x)
+        p=a/np.sum(a)
+        scale=np.random.choice(x,p=p)/max(abs(z_func))
+        z_func*=scale
+        k=0
+        while k<len(coeff_all):
+            coeff_all[k]*=scale
+            k+=3
 
     return z_func,coeff_all
 
@@ -215,17 +217,14 @@ def generate_pseudo_data(xy_known,xy,z_func,eff_count_limits):
         
         a=z_func[coeff_temp]
 
-        effective_count= np.random.uniform(low=eff_count_limits[0], high=eff_count_limits[1])
+        effective_count = np.random.uniform(low=eff_count_limits[0], high=eff_count_limits[1])
+        N_total = poisson.rvs(effective_count)
 
-        n_plus=0.5*effective_count*(1+a)
-        n_minus=0.5*effective_count*(1-a)
+        N_plus = np.random.binomial(N_total, (1 + a)/2)
+        N_minus = N_total - N_plus
 
-        N_plus=poisson.rvs(n_plus)
-        N_minus=poisson.rvs(n_minus)
-
-        z=(N_plus-N_minus)/(N_plus+N_minus)
-        e=(2/((N_plus+N_minus)**2))*np.sqrt(N_plus*N_minus*(N_plus+N_minus))
-
+        z = (N_plus - N_minus) / N_total
+        e = np.sqrt((1 - z**2) / N_total)
 
         z_known.append(z)
         e_known.append(e)
@@ -485,11 +484,11 @@ def fit_pseudodata():
     j = list(range(len(hypercube)))
 
     data_dict = dict({
-        "hyperparameter": j, "loss_score":j,"0.67std_percent_known": j, "1std_percent_known": j,
-        "1.96std_percent_known": j, "0.67std_percent_fit_rand": j, "1std_percent_fit_rand": j,
-        "1.96std_percent_fit_rand": j, "coeff_known_pull": j, "coeff_known": j,
-        "coeff_GP_pull_rand": j, "coeff_GP_rand": j,
-        "runtime_seconds": j  
+        "hyperparameter": j, "loss_score":j,"upper_bounds":j,"lower_bounds":j,\
+        "0.67std_percent_known": j, "1std_percent_known": j,"1.96std_percent_known": j,\
+        "0.67std_percent_fit_rand": j, "1std_percent_fit_rand": j,"1.96std_percent_fit_rand":j,\
+        "coeff_known_pull": j, "coeff_known": j,"coeff_GP_pull_rand": j, "coeff_GP_rand": j,\
+        "cpu_runtime": j,"wall_runtime":j  
     })
 
     data = pd.DataFrame(data_dict)
@@ -501,7 +500,7 @@ def fit_pseudodata():
     for k in range(hypercube_len):
         print(k)
 
-        coeff_all,x_known,y_known,z_known,e_known,z_func_known=load_pseudodata("pseudodata_inputs.csv",k)
+        coeff_all,x_known,y_known,z_known,e_known,z_func_known=load_pseudodata("pseudodata_inputs_ks50.csv",2)
 
 
         xy_known=np.stack((x_known,y_known))
@@ -524,14 +523,21 @@ def fit_pseudodata():
 
         '''
 
-        start_time = time.process_time()
-        #hyperpars, score = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
-        #output_file="pseudodata_ks.csv"
-        hyperpars, score = len_scale_sigma(xy_known, z_known, e_known, True, False, None, "")
-        output_file = "pseudodata_sigma.csv"
-        end_time = time.process_time()
+        start_cpu = time.process_time()
+        start_wall = time.perf_counter()
+        #hyperpars, score,upper_bounds,lower_bounds = len_scale_ks(xy_known, z_known, e_known, True, False, None, "")
+        #output_file="pseudodata_ks_kmeans_same.csv"
+        #hyperpars, score = len_scale_sigma(xy_known, z_known, e_known, True, False, None, "")
+        #output_file = "pseudodata_sigma.csv"
+        hyperpars,score,upper_bounds,lower_bounds = len_scale_swarm(xy_known, z_known, e_known,True,None,"",40,300,100,False)
+        output_file="pseudodata_swarm_kmeans_same.csv"
+        end_cpu = time.process_time()
+        end_wall = time.perf_counter()
 
-        z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars)
+        print("CPU time used: ", end_cpu - start_cpu)
+        print("Wall-clock time: ", end_wall - start_wall)
+
+        z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars,  n_jobs=1)
 
         xy_rand = get_xy_rand(xy, xy_known, accuracy_a, accuracy_e)
         z_fit_rand, e_fit_rand, z_func_rand = get_fit_points(xy_rand, xy, z_fit, e_fit, z_func)
@@ -548,6 +554,8 @@ def fit_pseudodata():
 
         data.at[k, "hyperparameter"] = hyperpars
         data.at[k, "loss_score"]=score
+        data.at[k, "upper_bounds"]=upper_bounds
+        data.at[k, "lower_bounds"]=lower_bounds
 
         data.at[k, "0.67std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 0.67)
         data.at[k, "1std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 1)
@@ -565,7 +573,8 @@ def fit_pseudodata():
         data.at[k, "coeff_GP_pull_rand"] = coeff_GP_pull_rand
         data.at[k, "coeff_GP_rand"] = coeff_GP_rand
 
-        data.at[k, "runtime_seconds"] = end_time - start_time  
+        data.at[k, "cpu_runtime"] = end_cpu - start_cpu  
+        data.at[k, "wall_runtime"] = end_wall - start_wall  
 
     data.to_csv(output_file, index=False)
 
@@ -674,7 +683,7 @@ def fit_to_func():
 
 def print_std():
 
-    data=pd.read_csv("pseudodata_sigma.csv")
+    data=pd.read_csv("pseudodata_swarm_kmeans_same.csv")
 
     print(f"0.67 known: \t{np.mean(data['0.67std_percent_known'].to_numpy())}")
     print(f"0.67 GP: \t{np.mean(data['0.67std_percent_fit_rand'].to_numpy())}\n")
@@ -754,7 +763,7 @@ def gen_pseudo_data():
     for item in data.columns:
         data[item] = data[item].apply(lambda x: json.dumps(x))
 
-    data.to_csv("pseudodata_inputs.csv", index=False)
+    data.to_csv("pseudodata_inputs_ks50.csv", index=False)
 
     return
 
@@ -802,10 +811,100 @@ def plot_comparison():
 
 #####################################################################################################################
 
+def check_consistency():  
+
+    # --- Read CSV containing hyperparameters ---
+    data = pd.read_csv("pseudodata_ks_kmeans_same.csv")
+
+    # --- Convert hyperparameter strings to arrays ---
+    def parse_hyperpars(s):
+        s = s.strip("[]")
+        return np.array([float(x) for x in s.split()])
+
+    hyperpars = np.stack(data['hyperparameter'].apply(parse_hyperpars).values)
+    hp1 = hyperpars[:, 0]
+    hp2 = hyperpars[:, 1]
+
+    # Axis limits for consistency with fitting ranges
+    xlims = (np.min(x_known[0]) - lower_bounds[0], np.max(x_known[0]) + upper_bounds[0])
+    ylims = (np.min(x_known[1]) - lower_bounds[1], np.max(x_known[1]) + upper_bounds[1])
+
+    # --- 2D histogram of hyperparameters ---
+    plt.figure(figsize=(8,6))
+    plt.hist2d(hp1, hp2, bins=20, cmap='viridis', range=[xlims, ylims])
+    plt.colorbar(label='Counts')
+    plt.xlabel('Hyperparameter 1 (Energy)')
+    plt.ylabel('Hyperparameter 2 (Angle)')
+    plt.title('2D Histogram of Hyperparameters')
+    plt.xlim(xlims)
+    plt.ylim(ylims)
+    plt.savefig("2dlen.png")
+    plt.show()
+
+    # --- 1D histograms ---
+    fig, axes = plt.subplots(1, 2, figsize=(12,5))
+    bins1d = 20
+
+    axes[0].hist(hp1, bins=bins1d, color='skyblue', edgecolor='black', range=xlims)
+    axes[0].set_xlabel('Hyperparameter 1 (Energy)')
+    axes[0].set_ylabel('Count')
+    axes[0].set_title('1D Histogram of Hyperparameter 1 (Energy)')
+    axes[0].set_xlim(xlims)
+
+    axes[1].hist(hp2, bins=bins1d, color='salmon', edgecolor='black', range=ylims)
+    axes[1].set_xlabel('Hyperparameter 2 (Angle)')
+    axes[1].set_ylabel('Count')
+    axes[1].set_title('1D Histogram of Hyperparameter 2 (Angle)')
+    axes[1].set_xlim(ylims)
+
+    plt.tight_layout()
+    plt.savefig("hist1d.png")
+    plt.show()
+
+    return lower_bounds, upper_bounds
+
+###############################################################################################################
+
+def time_check():
+    df1 = pd.read_csv("pseudodata_ks_kmeans_same.csv")
+    df2 = pd.read_csv("pseudodata_swarm_kmeans_same.csv")
+
+    # Extract the runtime columns
+    cpu1 = df1["cpu_runtime"].values
+    cpu2 = df2["cpu_runtime"].values
+    wall1 = df1["wall_runtime"].values
+    wall2 = df2["wall_runtime"].values
+
+    # --- 1. Overlayed histograms of CPU runtimes ---
+    plt.figure(figsize=(8, 5))
+    plt.hist(cpu1, bins=30, alpha=0.5, label="KS")
+    plt.hist(cpu2, bins=30, alpha=0.5, label="Swarm")
+    plt.title("CPU Runtime Distributions")
+    plt.xlabel("CPU Runtime (seconds)")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.savefig("cpu_runtime.png")
+    plt.show()
+
+    # --- 2. Overlayed histograms of Wall runtimes ---
+    plt.figure(figsize=(8, 5))
+    plt.hist(wall1, bins=30, alpha=0.5, label="KS")
+    plt.hist(wall2, bins=30, alpha=0.5, label="Swarm")
+    plt.title("Wall Runtime Distributions")
+    plt.xlabel("Wall Runtime (seconds)")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.savefig("wall_runtime.png")
+    plt.show()
+
+    return
+
+###############################################################################################################
+
 energy_limits=[1.2,2]
 angle_limits=[-1,1]
-datapoints_energies_measured=4
-datapoints_angles_measured=[4,10]
+datapoints_energies_measured=20
+datapoints_angles_measured=[20,50]
 gaus_mean_limits=[1.4,1.8]       
 gaus_width_limits=[0.25,0.75]
 measured_angle_limits=[-0.85,0.85]   
@@ -831,3 +930,7 @@ fit_pseudodata()
 #fit_to_func()
 
 print_std()
+
+#check_consistency()
+
+#time_check()

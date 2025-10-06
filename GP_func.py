@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.linalg import solve,cholesky,inv
+from numba import njit, prange
 
 def GP1(x_known, y_known, e_known, x_fit, lengths, batch_size=10000):
 
@@ -51,7 +52,7 @@ def GP1(x_known, y_known, e_known, x_fit, lengths, batch_size=10000):
 
 #########################################################################
 
-def GP(x_known, y_known, e_known,x_fit,lengths):
+def GP2(x_known, y_known, e_known,x_fit,lengths):
 
     '''
     Perform GP regression to find a predicted mean and uncertainty for unknown datapoints
@@ -96,9 +97,8 @@ def kernel_func(x1,x2,l):
     Calculates the RBF kernel between 2 sets of points with given length scales for each dimension
     '''
     
-    amp, ls = l[0], l[1:]
-    x1_scaled = x1 / ls[:, None]
-    x2_scaled = x2 / ls[:, None]
+    x1_scaled = x1 / l[:, None]
+    x2_scaled = x2 / l[:, None]
 
     x1_sq = np.sum(x1_scaled**2, axis=0).reshape(-1, 1)
     x2_sq = np.sum(x2_scaled**2, axis=0).reshape(1, -1)
@@ -106,8 +106,8 @@ def kernel_func(x1,x2,l):
     sq_dist = x1_sq + x2_sq - 2 * np.dot(x1_scaled.T, x2_scaled)
     sq_dist = np.maximum(sq_dist, 0)  
 
-    return amp * np.exp(-0.5 * sq_dist)
-    #return np.exp(-0.5 * sq_dist)
+    #return amp * np.exp(-0.5 * sq_dist)
+    return np.exp(-0.5 * sq_dist)
 
 ###########################################################################################################
 
@@ -163,3 +163,54 @@ def GP_with_inverse(x_known, y_known, e_known, x_fit, lengths, batch_size=10000)
     e_fit = np.concatenate(e_fit_list)
 
     return y_fit, e_fit, K_inv
+
+
+from joblib import Parallel, delayed
+
+@njit(parallel=True, fastmath=True)
+def kernel_func_rbf_numba(x1, x2, ls):
+    d, N1 = x1.shape
+    _, N2 = x2.shape
+
+    K = np.empty((N1, N2))
+    for i in prange(N1):
+        for j in prange(N2):
+            s = 0.0
+            for k in range(d):
+                diff = (x1[k, i] - x2[k, j]) / ls[k]
+                s += diff * diff
+            K[i, j] = np.exp(-0.5 * s)
+    return K
+
+def GP(x_known, y_known, e_known, x_fit, ls, batch_size=10000, n_jobs=-1):
+    N_fit = x_fit.shape[1]
+
+    y_fit = np.empty(N_fit)
+    e_fit = np.empty(N_fit)
+
+    # Kernel + noise
+    K = kernel_func_rbf_numba(x_known, x_known, ls) + np.diag(e_known**2)
+    L = np.linalg.cholesky(K)
+    alpha = solve(L.T, solve(L, y_known))
+
+    # Batch ranges
+    batch_ranges = [(start, min(start + batch_size, N_fit)) for start in range(0, N_fit, batch_size)]
+
+    # Worker
+    def _gp_batch(x_batch):
+        K_s = kernel_func_rbf_numba(x_known, x_batch, ls)
+        mu_s = K_s.T @ alpha
+        v = solve(L, K_s)
+        var_s = np.clip(1 - np.einsum('ij,ij->j', v, v), 1e-12, None)
+        sigma_s = np.sqrt(var_s)
+        return mu_s, sigma_s
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_gp_batch)(x_fit[:, start:end]) for start, end in batch_ranges
+    )
+
+    for (start, end), (mu_s, sigma_s) in zip(batch_ranges, results):
+        y_fit[start:end] = mu_s
+        e_fit[start:end] = sigma_s
+
+    return y_fit, e_fit

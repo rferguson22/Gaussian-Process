@@ -1,4 +1,11 @@
 import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 import numpy as np
 from numpy.linalg import inv
 import math
@@ -6,6 +13,7 @@ import math
 from smt.sampling_methods import LHS
 import emcee
 import multiprocessing
+from pathos.multiprocessing import ProcessingPool as Pool
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 import corner
@@ -99,14 +107,14 @@ def sigma_check_old(lengths,x_known,y_known,e_known,sigma,expected_vals,lower_bo
 
 ###################################################################################################
 
-def sigma_check1(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds):
+def sigma_check(lengths, x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds):
 
     '''
     Computes the loss function:
     '''
 
-    #if np.any(lengths[1:] <= lower_bounds) or np.any(lengths[1:]>=upper_bounds):
-    if np.any(lengths[1:]<=0):
+    if np.any(lengths <= lower_bounds) or np.any(lengths>=upper_bounds):
+    #if np.any(lengths<=0):
         return -1e13
 
     y_fit, e_fit = GP(x_known, y_known, e_known, x_known, lengths)
@@ -123,7 +131,7 @@ def sigma_check1(lengths, x_known, y_known, e_known,sigma_vals,expected_percents
 
 ##########################################################################################
 
-def sigma_check(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
+def sigma_check1(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
     """
     LOO loss:
     - Predict each point from the GP trained on all others
@@ -297,185 +305,238 @@ def convert_to_cdf(percent_within):
 
 ##############################################################################################################
 
-def ks_loss(lengths,x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds):
+def ks_loss(ls, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
 
-    if np.any(lengths <= lower_bounds) or np.any(lengths >= upper_bounds):
-    #if np.any(lengths<=0):
+    if np.any(ls <= lower_bounds) or np.any(ls >= upper_bounds):
         return -1e13
 
-    y_fit, e_fit = GP1(x_known, y_known, e_known, x_known, lengths)
-    
-    scaled_e = e_fit[:, None] * sigma_vals[None, :] 
-
+    # Single-threaded GP inside MCMC
+    y_fit, e_fit = GP1(x_known, y_known, e_known, x_known, ls, batch_size=x_known.shape[1])
+    scaled_e = e_fit[:, None] * sigma_vals[None, :]
     pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
-
     measured_percents = np.mean(np.abs(pulls) <= 1, axis=0)
 
-    #measured_cdf=convert_to_cdf(measured_percents)
-
-    D, _ = ks_2samp(expected_percents, measured_percents)
-    
+    D = ks_2samp_manual(expected_percents, measured_percents)
     return -D
 
 ##############################################################################################################
 
-def len_scale_ks(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name):
+def ks_2samp_manual(data1, data2):
+    """
+    Manual implementation of the Kolmogorov-Smirnov 2-sample test.
+    Parameters
+    ----------
+    data1, data2 : array-like
+        The two samples.
+    Returns
+    -------
+    D : float
+        KS statistic (max distance between empirical CDFs).
+    """
+    # Convert to numpy arrays and sort
+    data1 = np.sort(np.array(data1))
+    data2 = np.sort(np.array(data2))
 
-    '''
-    Finds the optimal length scale based on the KS-test loss function,
-    using MCMC for exploration and deterministic selection of the best candidate.
-    '''
-    original_file_path = Path(out_file_name)
-    plotting_path = original_file_path.parent
+    # Get sizes
+    n1, n2 = len(data1), len(data2)
 
+    # All unique values in combined data
+    data_all = np.concatenate([data1, data2])
+    data_all = np.sort(np.unique(data_all))
+
+    # Empirical CDFs
+    cdf1 = np.searchsorted(data1, data_all, side='right') / n1
+    cdf2 = np.searchsorted(data2, data_all, side='right') / n2
+
+    # KS statistic
+    D = np.max(np.abs(cdf1 - cdf2))
+
+    return D
+
+##########################################################################
+
+def manual_ks_2samp_numba(x, y):
+    x = np.sort(x)
+    y = np.sort(y)
+    n, m = len(x), len(y)
+    x_ecdf = np.arange(1, n+1) / n
+    y_ecdf = np.arange(1, m+1) / m
+
+    all_points = np.empty(n + m)
+    for i in range(n):
+        all_points[i] = x[i]
+    for i in range(m):
+        all_points[n + i] = y[i]
+    all_points.sort()
+
+    x_vals = np.empty(n + m)
+    y_vals = np.empty(n + m)
+
+    xi = yi = 0
+    for k in range(n + m):
+        while xi < n - 1 and all_points[k] > x[xi]:
+            xi += 1
+        while yi < m - 1 and all_points[k] > y[yi]:
+            yi += 1
+        x_vals[k] = x_ecdf[xi]
+        y_vals[k] = y_ecdf[yi]
+
+    D = 0.0
+    for k in range(n + m):
+        diff = abs(x_vals[k] - y_vals[k])
+        if diff > D:
+            D = diff
+
+    return D
+
+##############################################################################################
+
+def evaluate_loss(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds):
+    return -ks_loss(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds)
+
+#################################################################################################################
+
+def evaluate_loss_helper(args):
+    p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds = args
+    return evaluate_loss(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds)
+
+
+#################################################################################################
+
+def len_scale_swarm(x_known, y_known, e_known, MC_progress=False, MC_plotting=False,
+                    labels=None, out_file_name="output.txt",
+                    num_particles=30, max_iters=300, patience=40, refine=True):
+    
+
+    max_points = 100
+    if x_known.shape[1] > max_points:
+        print(f"Dataset too large ({x_known.shape[1]} points). Subsampling to {max_points} for hyperparameter optimisation.")
+
+        # Fit KMeans on the data (transpose: (dims, points) → (points, dims))
+        X = x_known.T
+        kmeans = KMeans(n_clusters=max_points, n_init='auto', random_state=0)
+        labels = kmeans.fit_predict(X)
+        centers = kmeans.cluster_centers_
+
+        # Pick closest actual point to each cluster center
+        idx = []
+        for k in range(max_points):
+            members = np.where(labels == k)[0]
+            if len(members) == 0:
+                continue  # skip empty clusters (rare)
+            d2 = np.sum((X[members] - centers[k])**2, axis=1)
+            closest = members[np.argmin(d2)]
+            idx.append(closest)
+
+        idx = np.array(idx)
+
+        # Apply the chosen indices
+        x_known = x_known[:, idx]
+        y_known = y_known[idx]
+        e_known = e_known[idx]
+    
     ndim = len(x_known)
-    nwalkers = 40 * ndim
-    max_n = 2000 * ndim
+    num_particles = 30
+    max_iter = 500
+    patience = 100
+    inertia_decay = 0.002
+    restart_count = 0
 
-    r_hat_tol = 1.18
-    tau_tol = 0.15
-
-    ranges = np.abs(np.max(x_known, axis=1) - np.min(x_known, axis=1))
-    lower_bounds = 0.01 * ranges/len(x_known.T)
+    ranges = np.max(x_known, axis=1) - np.min(x_known, axis=1)
+    lower_bounds = 0.01 * ranges / x_known.shape[1]  
     upper_bounds = ranges
-    endpoints = np.column_stack((lower_bounds, upper_bounds))
+    bounds_array = np.column_stack((lower_bounds, upper_bounds))
+    v_max = 1.0 * (upper_bounds - lower_bounds) 
 
-    sampling = LHS(xlimits=np.array(endpoints), criterion='center')
-    initial_positions = sampling(nwalkers)
-    initial_positions += 1e-5 * np.random.randn(*initial_positions.shape)
-
-    filename = "backend.h5"
-    backend = emcee.backends.HDFBackend(filename)
-    backend.reset(nwalkers, ndim)
-
-    print("Beginning MCMC")
-
-    sigma_vals = np.linspace(0.001, 3, 1000) 
+    sigma_vals = np.linspace(0.001, 3, 1000)
     expected_percents = sigma_to_percent(sigma_vals)
-    #expected_cdf=convert_to_cdf(expected_percents)
 
+    sampling = LHS(xlimits=bounds_array, criterion="center")
+    positions = sampling(num_particles)
+    velocities = np.zeros_like(positions)
 
     num_cores = max(1, os.cpu_count() // 4)
     ctx = multiprocessing.get_context('fork')
-    with ctx.Pool(processes=num_cores) as pool:
-        index = 0
-        autocorr = np.empty(max_n)
-        r_hat_conv = False
-        
-        old_tau = np.inf
-        sampler = emcee.EnsembleSampler(
-            nwalkers, ndim, ks_loss,
-            args=(x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds, upper_bounds),
-            backend=backend,
-            pool=pool
-        )
-        for sample in sampler.sample(initial_positions, iterations=max_n, progress=MC_progress):
-            if sampler.iteration % 100 != 0:
-                continue
+    with ctx.Pool(processes=num_cores) as executor:
+        # Evaluate initial personal bests once
+        args_iterable = [(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds) for p in positions]
+        personal_best_scores = list(executor.map(evaluate_loss_helper, args_iterable))
+        personal_best_scores = np.array(personal_best_scores)
+        personal_best_positions = positions.copy()
 
-            tau = sampler.get_autocorr_time(tol=0)
-            autocorr[index] = np.mean(tau)
-            index += 1
+        global_best_idx = np.argmin(personal_best_scores)
+        global_best_position = personal_best_positions[global_best_idx].copy()
+        global_best_score = personal_best_scores[global_best_idx]
 
-            chains = sampler.get_chain(discard=50, thin=5, flat=False)
-            if chains.shape[1] > 1:
-                r_hat = calc_r_hat(chains)
-                r_hat_conv = np.all(r_hat < r_hat_tol)
+        no_improve_counter = 0
+
+        for i in range(max_iter):
+            w = max(0.4, 0.9 - i * inertia_decay)
+            c1 = c2 = 1.4
+
+            r1 = np.random.rand(num_particles, ndim)
+            r2 = np.random.rand(num_particles, ndim)
+
+            velocities = (w * velocities +
+                          c1 * r1 * (personal_best_positions - positions) +
+                          c2 * r2 * (global_best_position - positions))
+            velocities = np.clip(velocities, -v_max, v_max)
+
+            positions += velocities
+            positions = np.clip(positions, lower_bounds, upper_bounds)
+
+            args_iterable = [(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds) for p in positions]
+            scores = list(executor.map(evaluate_loss_helper, args_iterable))
+            scores = np.array(scores)
+
+            improved = scores < personal_best_scores
+            personal_best_positions[improved] = positions[improved]
+            personal_best_scores[improved] = scores[improved]
+
+            current_best_idx = np.argmin(personal_best_scores)
+            current_best_score = personal_best_scores[current_best_idx]
+
+            if current_best_score < global_best_score:
+                global_best_score = current_best_score
+                global_best_position = personal_best_positions[current_best_idx].copy()
+                no_improve_counter = 0
+            else:
+                no_improve_counter += 1
+
+            if MC_progress and i % 20 == 0:
+                print(f"Iter {i}: Best Score = {global_best_score:.6f}, No Improve = {no_improve_counter}")
+
+            if no_improve_counter >= patience:
                 if MC_progress:
-                    print("r_hat:\t\t" + str(r_hat))
+                    print(f"Stagnation at iter {i}, soft-restarting swarm...")
 
-            tau_conv = np.all((np.abs(old_tau - tau) / tau) < tau_tol)
-            if MC_progress:
-                print("tau_stability:\t" + str(np.abs(old_tau - tau) / tau))
+                noise = 0.1 * (upper_bounds - lower_bounds)
+                personal_best_positions += np.random.uniform(-noise, noise, personal_best_positions.shape)
+                personal_best_positions = np.clip(personal_best_positions, lower_bounds, upper_bounds)
+                positions = personal_best_positions.copy()
+                velocities = np.zeros_like(positions)
 
-            if r_hat_conv and tau_conv:
-                break
-            old_tau = tau
+                args_iterable = [(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds) for p in personal_best_positions]
+                personal_best_scores = list(executor.map(evaluate_loss_helper, args_iterable))
+                personal_best_scores = np.array(personal_best_scores)
 
-    burnin = int(0.5 * sampler.iteration)
-    samples = sampler.get_chain(discard=burnin, thin=10, flat=True)
+                global_best_idx = np.argmin(personal_best_scores)
+                global_best_position = personal_best_positions[global_best_idx].copy()
+                global_best_score = personal_best_scores[global_best_idx]
+                no_improve_counter = 0
+                restart_count += 1
 
-    print("MCMC converged.")
-
-    
-    num_peaks, x, density = test_unimode(samples, dim=0)
-
-    print("MCMC converged. Checking for multimodal surface")
-
-    if MC_plotting:
-        fig = corner.corner(samples, labels=labels[:-2])
-        fig.savefig(plotting_path / "GP_corner_plot.png")
-
-        plt.figure(figsize=(8, 6))
-        plt.plot(x, density, label="KDE")
-        plt.title(f"KDE and Peak Detection (Peaks Found: {num_peaks})")
-        plt.xlabel("Dim 1")
-        plt.ylabel("Density")
-        plt.legend()
-        plt.savefig(plotting_path / "GP_KDE_plots.png")
-        plt.show()
-
-    if num_peaks > 1:
-        print("Multimodal distribution detected. Performing Clustering")
-
-        silhouette_scores = []
-        K_values = range(2, 11)
-
-        for K in K_values:
-            kmeans = KMeans(n_clusters=K, random_state=0) 
-            cluster_labels = kmeans.fit_predict(samples)
-            score = silhouette_score(samples, cluster_labels)
-            silhouette_scores.append(score)
-
-        if MC_plotting:
-            plt.figure(figsize=(8, 6))
-            plt.plot(K_values, silhouette_scores, "-o", color="blue")
-            plt.xlabel("Number of Clusters (K)")
-            plt.ylabel("Silhouette Score")
-            plt.title("Silhouette Score for Optimal K")
-            plt.grid(True)
-            plt.savefig(plotting_path / "GP_silhouette_scores.png")
-            plt.show()
-
-        optimal_K = K_values[np.argmax(silhouette_scores)]
-        print(f"Optimal number of Clusters (K): {optimal_K}")
-
-        kmeans = KMeans(n_clusters=optimal_K, random_state=0)
-        cluster_labels = kmeans.fit_predict(samples)
-        modes = kmeans.cluster_centers_
-
-    else:
-        print("Single mode surface")
-        modes = np.mean(samples, axis=0, keepdims=True)
-
-    print("Modes of surface:")
-    print(modes)
-    
-
-
-    def func_minimise(lengths):
-        return -ks_loss(lengths,x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds, upper_bounds)    
-
-    score=1e12
-    best=[]
-    
-    for j in range(len(modes)):
-        result=minimize(func_minimise,modes[j],method="Nelder-Mead")
-        if result.fun<score:
-            best=result.x
-            score=result.fun
-
+    print("PSO completed.")
     print("Optimal length scale found:")
-    print(best)
+    print(global_best_position)
     print("Value of loss function:")
-    print(score)
+    print(global_best_score)
+    print(f"Total soft restarts: {restart_count}")
 
-    if os.path.exists(filename):
-        os.remove(filename)
+    return global_best_position, global_best_score,upper_bounds,lower_bounds
 
-    return best, score
 
-###########################################################################################################
+###############################################################################################
 
 def bounds(X, lower_frac=0.1, upper_frac=10.0):
 
@@ -560,50 +621,64 @@ def bounds1(X, lower_frac=0.05, upper_frac=1.0):
 
 ##########################################################################################################
 
-def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels, out_file_name):
-    
-    '''
-    Finds the optimal length scale based on the KS-test loss function,
-    using MCMC for exploration and deterministic selection of the best candidate.
-    '''
+def len_scale_ks(x_known, y_known, e_known, MC_progress=True, MC_plotting=True, labels=None, out_file_name="GP_results.h5"):
+
+
+    max_points = 100
+    if x_known.shape[1] > max_points:
+        print(f"Dataset too large ({x_known.shape[1]} points). Subsampling to {max_points} for hyperparameter optimisation.")
+
+        # Fit KMeans on the data (transpose: (dims, points) → (points, dims))
+        X = x_known.T
+        kmeans = KMeans(n_clusters=max_points, n_init='auto', random_state=0)
+        labels = kmeans.fit_predict(X)
+        centers = kmeans.cluster_centers_
+
+        # Pick closest actual point to each cluster center
+        idx = []
+        for k in range(max_points):
+            members = np.where(labels == k)[0]
+            if len(members) == 0:
+                continue  # skip empty clusters (rare)
+            d2 = np.sum((X[members] - centers[k])**2, axis=1)
+            closest = members[np.argmin(d2)]
+            idx.append(closest)
+
+        idx = np.array(idx)
+
+        # Apply the chosen indices
+        x_known = x_known[:, idx]
+        y_known = y_known[idx]
+        e_known = e_known[idx]
+
     original_file_path = Path(out_file_name)
     plotting_path = original_file_path.parent
 
-    ndim = len(x_known)
-    nwalkers = 40* ndim
+    ndim = x_known.shape[0]
+    nwalkers = 40 * ndim
     max_n = 2000 * ndim
 
     r_hat_tol = 1.1
     tau_tol = 0.1
 
-    ranges = np.abs(np.max(x_known, axis=1) - np.min(x_known, axis=1))
-    lower_bounds = 0.01 * ranges/len(x_known.T)
+    x_known = np.atleast_2d(x_known)
+    ranges = np.max(x_known, axis=1) - np.min(x_known, axis=1)
+    lower_bounds = 0.01 * ranges / x_known.shape[1]
     upper_bounds = ranges
     endpoints = np.column_stack((lower_bounds, upper_bounds))
 
-    #endpoints,lower_bounds,upper_bounds = bounds(x_known, 0.5,2)
-
-    '''
-    endpoints=[]
-    for i in range(len(x_known)):
-        diff=(max(x_known[i])-min(x_known[i]))/len(x_known[i].T)
-        endpoints.append([1e-16,10*diff])
-    '''
-
-    
     sampling = LHS(xlimits=np.array(endpoints), criterion='center')
     initial_positions = sampling(nwalkers)
     initial_positions += 1e-5 * np.random.randn(*initial_positions.shape)
 
-
-    filename = "backend.h5"
+    filename = str(plotting_path / "backend.h5")
     backend = emcee.backends.HDFBackend(filename)
     backend.reset(nwalkers, ndim)
 
-    print("Beginning MCMC")
-
     sigma_vals = np.linspace(0.001, 3, 1000)
     expected_percents = sigma_to_percent(sigma_vals)
+
+    print("Beginning MCMC")
 
     num_cores = max(1, os.cpu_count() // 4)
     ctx = multiprocessing.get_context('fork')
@@ -611,14 +686,15 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
         index = 0
         autocorr = np.empty(max_n)
         r_hat_conv = False
-        
         old_tau = np.inf
+
         sampler = emcee.EnsembleSampler(
             nwalkers, ndim, ks_loss,
-            args=(x_known, y_known, e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds),
+            args=(x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds),
             backend=backend,
             pool=pool
         )
+
         for sample in sampler.sample(initial_positions, iterations=max_n, progress=MC_progress):
             if sampler.iteration % 100 != 0:
                 continue
@@ -627,6 +703,10 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
             autocorr[index] = np.mean(tau)
             index += 1
 
+            tau_conv = np.all((np.abs(old_tau - tau) / tau) < tau_tol)
+            if MC_progress:
+                print("tau_stability:\t" + str(np.abs(old_tau - tau) / tau))
+
             chains = sampler.get_chain(discard=50, thin=5, flat=False)
             if chains.shape[1] > 1:
                 r_hat = calc_r_hat(chains)
@@ -634,22 +714,15 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
                 if MC_progress:
                     print("r_hat:\t\t" + str(r_hat))
 
-            tau_conv = np.all((np.abs(old_tau - tau) / tau) < tau_tol)
-            if MC_progress:
-                print("tau_stability:\t" + str(np.abs(old_tau - tau) / tau))
-
             if r_hat_conv and tau_conv:
                 break
             old_tau = tau
 
-    burnin = int(0.4 * sampler.iteration)
+    burnin = int(0.5 * sampler.iteration)
     samples = sampler.get_chain(discard=burnin, thin=10, flat=True)
-
-    print("MCMC converged.")
-
     num_peaks, x, density = test_unimode(samples, dim=0)
 
-    print("Checking for multimodal surface")
+    print("MCMC converged. Checking for multimodal surface")
 
     if MC_plotting:
         fig = corner.corner(samples, labels=labels[:-2])
@@ -671,7 +744,7 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
         K_values = range(2, 11)
 
         for K in K_values:
-            kmeans = KMeans(n_clusters=K, random_state=0) 
+            kmeans = KMeans(n_clusters=K, n_init='auto', random_state=0)
             cluster_labels = kmeans.fit_predict(samples)
             score = silhouette_score(samples, cluster_labels)
             silhouette_scores.append(score)
@@ -689,7 +762,7 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
         optimal_K = K_values[np.argmax(silhouette_scores)]
         print(f"Optimal number of Clusters (K): {optimal_K}")
 
-        kmeans = KMeans(n_clusters=optimal_K, random_state=0)
+        kmeans = KMeans(n_clusters=optimal_K, n_init='auto', random_state=0)
         cluster_labels = kmeans.fit_predict(samples)
         modes = kmeans.cluster_centers_
 
@@ -700,30 +773,25 @@ def len_scale_sigma(x_known, y_known, e_known, MC_progress, MC_plotting, labels,
     print("Modes of surface:")
     print(modes)
 
-
-
     def func_minimise(lengths):
-        return -sigma_check(lengths,x_known,y_known,e_known,sigma_vals,expected_percents,lower_bounds,upper_bounds)  
+        return -ks_loss(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds)
 
-    score=1e12
-    best=[]
-    
+    score = 1e12
+    best = []
+
     for j in range(len(modes)):
-        result=minimize(func_minimise,modes[j],method="Nelder-Mead")
-        if result.fun<score:
-            best=result.x
-            score=result.fun
-
+        result = minimize(func_minimise, modes[j], method="Nelder-Mead")
+        if result.fun < score:
+            best = result.x
+            score = result.fun
 
     print("Optimal length scale found:")
     print(best)
     print("Value of loss function:")
     print(score)
 
-    if os.path.exists(filename):
-        os.remove(filename)
+    return best, score,upper_bounds,lower_bounds
 
-    return best, score
 
 ###########################################################################################################
 
