@@ -1,4 +1,17 @@
+import os
+
+cores_to_use = 2
+os.environ["OMP_NUM_THREADS"] = str(cores_to_use)
+os.environ["OPENBLAS_NUM_THREADS"] = str(cores_to_use)
+os.environ["MKL_NUM_THREADS"] = str(cores_to_use)
+os.environ["VECLIB_MAXIMUM_THREADS"] = str(cores_to_use)
+os.environ["NUMEXPR_NUM_THREADS"] = str(cores_to_use)
+os.environ["MKL_DYNAMIC"] = "FALSE"
+
+import math
 import numpy as np
+import json
+
 from numpy import random
 
 from scipy.optimize import curve_fit
@@ -6,21 +19,27 @@ from scipy.special import legendre
 from scipy.stats.distributions import norm
 from scipy.stats import poisson
 import scipy
+import time
 
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import math
 import pandas as pd 
 from smt.sampling_methods import LHS
 
 from collections import Counter
+import time  
 
-from find_len_scales import len_scale_opt,calculate_std_percent,calculate_pull
+from find_len_scales import len_scale_opt
 from convex_hull import fill_convex_hull,round_to_res
 from GP_func import GP
+
+from threadpoolctl import threadpool_limits
+
 
 #############################################################################################################
 
@@ -165,15 +184,16 @@ def generate_pseudo_func(xy,coeff_all,legendre_orders):
             z_func[i]+=b
             j+=3
 
-    x=np.linspace(0.6,0.9,1000)
-    a=x*(1-x)
-    p=a/np.sum(a)
-    scale=np.random.choice(x,p=p)/max(abs(z_func))
-    z_func*=scale
-    k=0
-    while k<len(coeff_all):
-        coeff_all[k]*=scale
-        k+=3
+    if max(abs(z_func))>1:
+        x=np.linspace(0.6,0.9,1000)
+        a=x*(1-x)
+        p=a/np.sum(a)
+        scale=np.random.choice(x,p=p)/max(abs(z_func))
+        z_func*=scale
+        k=0
+        while k<len(coeff_all):
+            coeff_all[k]*=scale
+            k+=3
 
     return z_func,coeff_all
 
@@ -196,17 +216,14 @@ def generate_pseudo_data(xy_known,xy,z_func,eff_count_limits):
         
         a=z_func[coeff_temp]
 
-        effective_count= np.random.uniform(low=eff_count_limits[0], high=eff_count_limits[1])
+        effective_count = np.random.uniform(low=eff_count_limits[0], high=eff_count_limits[1])
+        N_total = poisson.rvs(effective_count)
 
-        n_plus=0.5*effective_count*(1+a)
-        n_minus=0.5*effective_count*(1-a)
+        N_plus = np.random.binomial(N_total, (1 + a)/2)
+        N_minus = N_total - N_plus
 
-        N_plus=poisson.rvs(n_plus)
-        N_minus=poisson.rvs(n_minus)
-
-        z=(N_plus-N_minus)/(N_plus+N_minus)
-        e=(2/((N_plus+N_minus)**2))*np.sqrt(N_plus*N_minus*(N_plus+N_minus))
-
+        z = (N_plus - N_minus) / N_total
+        e = np.sqrt((1 - z**2) / N_total)
 
         z_known.append(z)
         e_known.append(e)
@@ -380,261 +397,221 @@ def fit_gaussian(x_data1,x_data2,range_data,bins):
 
 #####################################################################################################################
 
-def coeff_pull_table():
+def calculate_pull(y_fit,y_known,e_fit):
 
     '''
-    Gets the pull of the fitted coefficients
+    Calculates the pull a.k.a residual
     '''
 
-    data_to_plot=pd.read_csv("pseudodata_results.csv")
+    pull = (y_fit - y_known) / np.maximum(e_fit, 1e-12)
+    
+    return pull
 
-    coeff_known_pull=data_to_plot["coeff_known_pull"].to_numpy()
-    coeff_known_pull=np.array([np.fromstring(item.strip("[]"),sep=" ") for item in coeff_known_pull])
-    coeff_GP_pull_rand=data_to_plot["coeff_GP_pull_rand"].to_numpy()
-    coeff_GP_pull_rand=np.array([np.fromstring(item.strip("[]"),sep=" ") for item in coeff_GP_pull_rand])
+#######################################################################################
 
-    i=0
-    coeff_pulls=[]
+def calculate_std_percent(y_fit,y_known,e_fit,std_coeff):
 
-    array1=coeff_known_pull
-    array2=coeff_GP_pull_rand
+    '''
+    Calculates the percentage of pulls that are within a standard deviation multiple
+    '''
 
-    while i<len(coeff_known_pull.T):
-        l=legendre_orders[int(i/3)]
-        
-        a=fit_gaussian(array1.T[i],array2.T[i],(-2,2),100)
-        
-        coeff_pulls.append(a)
-        
-        
-        b=fit_gaussian(array1.T[i+1],array2.T[i+1],(-2,2),100)
-        
-        coeff_pulls.append(b)
-        
-        c=fit_gaussian(array1.T[i+2],array2.T[i+2],(-2,2),100)
-        
-        coeff_pulls.append(c)
+    pull=calculate_pull(y_fit,y_known,std_coeff*e_fit)
+    
+    percent=len([item for item in pull if abs(item)<=1])/len(pull)
+    
+    return percent
 
-        i+=3
+#########################################################################################################
 
-    coeff_pulls=np.array(coeff_pulls)
+def load_pseudodata(filename,k):
+    data = pd.read_csv(filename)
 
-    return
+    # JSON decode every column
+    for col in data.columns:
+        data[col] = data[col].apply(json.loads)
 
+    # Convert numeric arrays into numpy arrays
+    numeric_cols = ["coefficients", "x_known", "y_known", "z_known", "e_known", "z_func_known"]
+    for col in numeric_cols:
+        if col in data.columns:
+            data[col] = data[col].apply(np.array)
 
-###################################################################################################################
+    data_example = data.loc[[k]]
+
+    coeff_all    = data_example["coefficients"].to_numpy()[0]
+    x_known      = data_example["x_known"].to_numpy()[0]
+    y_known      = data_example["y_known"].to_numpy()[0]
+    z_known      = data_example["z_known"].to_numpy()[0]
+    e_known      = data_example["e_known"].to_numpy()[0]
+    z_func_known = data_example["z_func_known"].to_numpy()[0]
+
+    
+    return coeff_all,x_known,y_known,z_known,e_known,z_func_known
+
+########################################################################################################
 
 def fit_pseudodata():
-
     '''
     Fits pseudodata
     '''
-
-    xlimits=([coeff_limits]*len(legendre_orders))
-
-    sampling = LHS(xlimits=np.array(xlimits),criterion='center')
+    xlimits = ([coeff_limits] * len(legendre_orders))
+    sampling = LHS(xlimits=np.array(xlimits), criterion='center')
     hypercube = sampling(hypercube_len)
 
+    fraction = abs(coeff_limits[0] - coeff_limits[1]) / (2 * len(hypercube))
+    decimal_places = str(fraction)[::-1].find('.')
 
-    fraction=abs(coeff_limits[0]-coeff_limits[1])/(2*len(hypercube))
-    decimal_places =str(fraction)[::-1].find('.')
+    j = list(range(len(hypercube)))
 
-    j=[]
-    for i in range(len(hypercube)):
-        j.append(i)
+    data_dict = dict({
+        "hyperparameter": j, "loss_score":j,"upper_bounds":j,"lower_bounds":j,\
+        "0.67std_percent_known": j, "1std_percent_known": j,"1.96std_percent_known": j,\
+        "0.67std_percent_fit_rand": j, "1std_percent_fit_rand": j,"1.96std_percent_fit_rand":j,\
+        "coeff_known_pull": j, "coeff_known": j,"coeff_GP_pull_rand": j, "coeff_GP_rand": j,\
+        "cpu_runtime": j,"wall_runtime":j  
+    })
 
-    data_dict=dict({"coefficients":j,"x_known":j,"y_known":j,"z_known":j,"e_known":j,"hyperparameter":j,\
-                    "0.67std_percent_known":j,"1std_percent_known":j,"1.96std_percent_known":j,\
-                    "0.67std_percent_fit_rand":j,"1std_percent_fit_rand":j,"1.96std_percent_fit_rand":j,\
-                    "coeff_known_pull":j,"coeff_known":j,\
-                    "coeff_GP_pull_rand":j,"coeff_GP_rand":j})
-
-    data=pd.DataFrame(data_dict)
+    data = pd.DataFrame(data_dict)
 
     for item in data_dict.keys():
-        data[item]=data[item].astype("object")
+        data[item] = data[item].astype("object")
 
 
-    for k in range(len(hypercube)):
+    for k in range(hypercube_len):
         print(k)
-        coeff=[round(item,decimal_places) for item in hypercube[k]]
-        
-        coeff_all=[]
-        
-        for i in range(len(coeff)):
-            gaus_mean=random.uniform(gaus_mean_limits[0],gaus_mean_limits[1])
-            gaus_width=random.uniform(gaus_width_limits[0],gaus_width_limits[1])
-            coeff_all.append(coeff[i])
-            coeff_all.append(gaus_mean)
-            coeff_all.append(gaus_width)  
-            
-        coeff_all=np.array(coeff_all)
-        
-        xy_known=assign_known_parameters(energy_limits,measured_angle_limits,\
-                                        datapoints_energies_measured,datapoints_angles_measured)
-            
-        xy= create_convex_hull_boundary(xy_known,accuracy_e,accuracy_a)
-        
-        z_func,coeff_all=generate_pseudo_func(xy,coeff_all,legendre_orders)
-        
-        z_known,e_known,z_func_known=generate_pseudo_data(xy_known,xy,z_func,eff_count_limits)
 
-        hyperpars=len_scale_opt(xy_known,z_known,e_known,False,False,"","")
-            
-        z_fit,e_fit=GP(xy_known,z_known,e_known,xy,hyperpars)
-        
-        xy_rand=get_xy_rand(xy,xy_known,accuracy_a,accuracy_e)
-        z_fit_rand,e_fit_rand,z_func_rand=get_fit_points(xy_rand,xy,z_fit,e_fit,z_func)
-            
-            
-        coeff_known_pull,coeff_known=fit_data(xy_known,z_known,e_known,coeff_limits,\
-                                                            gaus_mean_limits,gaus_width_limits,coeff_all)
-        coeff_GP_pull_rand,coeff_GP_rand=fit_data(xy_rand,z_fit_rand,e_fit_rand,coeff_limits,\
-                                                        gaus_mean_limits,gaus_width_limits,coeff_all)
-            
-        
-        
-        data.at[k,"coefficients"] = coeff_all 
-        data.at[k,"x_known"] = xy_known[0]
-        data.at[k,"y_known"] = xy_known[1]
-        data.at[k,"z_known"] = z_known
-        data.at[k,"e_known"] = e_known
-        data.at[k,"hyperparameter"]=hyperpars
+        coeff_all,x_known,y_known,z_known,e_known,z_func_known=load_pseudodata("pseudodata_inputs.csv",k)
 
-        data.at[k,"0.67std_percent_known"]=calculate_std_percent(z_known,z_func_known,e_known,0.67)
-        data.at[k,"1std_percent_known"]=calculate_std_percent(z_known,z_func_known,e_known,1)
-        data.at[k,"1.96std_percent_known"]=calculate_std_percent(z_known,z_func_known,e_known,1.96)
-        
-        data.at[k,"0.67std_percent_fit_rand"]=calculate_std_percent(z_fit_rand,z_func_rand,e_fit_rand,0.67)
-        data.at[k,"1std_percent_fit_rand"]=calculate_std_percent(z_fit_rand,z_func_rand,e_fit_rand,1)
-        data.at[k,"1.96std_percent_fit_rand"]=calculate_std_percent(z_fit_rand,z_func_rand,e_fit_rand,1.96) 
-        
-        data.at[k,"coeff_known_pull"]=coeff_known_pull
-        data.at[k,"coeff_known"]=coeff_known
-        
-        data.at[k,"coeff_GP_pull_rand"]=coeff_GP_pull_rand
-        data.at[k,"coeff_GP_rand"]=coeff_GP_rand
 
-    data.to_csv('pseudodata_results.csv', index=False)
+        xy_known=np.stack((x_known,y_known))
+
+        xy = create_convex_hull_boundary(xy_known, accuracy_e, accuracy_a)
+        z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
+
+        start_cpu = time.process_time()
+        start_wall = time.perf_counter()
+        hyperpars,score = len_scale_opt(xy_known, z_known, e_known,True)
+        end_cpu = time.process_time()
+        end_wall = time.perf_counter()
+
+        print("CPU time used: ", end_cpu - start_cpu)
+        print("Wall-clock time: ", end_wall - start_wall)
+
+        z_fit, e_fit = GP(xy_known, z_known, e_known, xy, hyperpars)
+
+        xy_rand = get_xy_rand(xy, xy_known, accuracy_a, accuracy_e)
+        z_fit_rand, e_fit_rand, z_func_rand = get_fit_points(xy_rand, xy, z_fit, e_fit, z_func)
+
+        coeff_known_pull, coeff_known = fit_data(
+            xy_known, z_known, e_known, coeff_limits,
+            gaus_mean_limits, gaus_width_limits, coeff_all
+        )
+
+        coeff_GP_pull_rand, coeff_GP_rand = fit_data(
+            xy_rand, z_fit_rand, e_fit_rand, coeff_limits,
+            gaus_mean_limits, gaus_width_limits, coeff_all
+        )
+
+        data.at[k, "hyperparameter"] = hyperpars
+        data.at[k, "loss_score"]=score
+
+        data.at[k, "0.67std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 0.67)
+        data.at[k, "1std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 1)
+        data.at[k, "1.96std_percent_known"] = calculate_std_percent(z_known, z_func_known, e_known, 1.96)
+
+        data.at[k, "0.67std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 0.67)
+        data.at[k, "1std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 1)
+        data.at[k, "1.96std_percent_fit_rand"] = calculate_std_percent(z_fit_rand, z_func_rand, e_fit_rand, 1.96)
+
+        data.at[k, "coeff_known_pull"] = coeff_known_pull
+        data.at[k, "coeff_known"] = coeff_known
+
+        data.at[k, "coeff_GP_pull_rand"] = coeff_GP_pull_rand
+        data.at[k, "coeff_GP_rand"] = coeff_GP_rand
+
+        data.at[k, "cpu_runtime"] = end_cpu - start_cpu  
+        data.at[k, "wall_runtime"] = end_wall - start_wall  
+
+    data.to_csv("pseudodata_output.csv", index=False)
 
     return
 
 ################################################################################################################
 
-def fit_to_func():
+def fix_array(array):
+    cleaned = array.strip("[]").replace(",", " ")
+    return np.array([float(i) for i in cleaned.split()])
 
-    '''
-    Generates pseudodata testing graphs
-    '''
+####################################################################################################################
 
-    def fix_array(array):
-        return np.array([float(i) for i in array.strip("[]").split()])
+def gen_pseudo_data():
 
-    data=pd.read_csv("pseudodata_results.csv")
+    print("Generating pseudodata")
 
-    r=random.randint(0,len(data))    
-    data_example=data.loc[[r]]
+    xlimits = ([coeff_limits] * len(legendre_orders))
+    sampling = LHS(xlimits=np.array(xlimits), criterion='center')
+    hypercube = sampling(hypercube_len)
 
-    coeff_all=fix_array(data_example["coefficients"].to_numpy()[0])
+    fraction = abs(coeff_limits[0] - coeff_limits[1]) / (2 * len(hypercube))
+    decimal_places = str(fraction)[::-1].find('.')
 
-    x_known=fix_array(data_example["x_known"].to_numpy()[0])
-    y_known=fix_array(data_example["y_known"].to_numpy()[0])
-    z_known=fix_array(data_example["z_known"].to_numpy()[0])
-    e_known=fix_array(data_example["e_known"].to_numpy()[0])
+    j = list(range(len(hypercube)))
 
-    hyperpars=fix_array(data_example["hyperparameter"].to_numpy()[0])
+    data_dict = {
+        "coefficients": j,
+        "x_known": j,
+        "y_known": j,
+        "z_known": j,
+        "e_known": j,
+        "z_func_known": j,
+    }
 
-    coeff_GP_rand=fix_array(data_example["coeff_GP_rand"].to_numpy()[0])
-    coeff_known=fix_array(data_example["coeff_known"].to_numpy()[0])
+    data = pd.DataFrame(data_dict)
 
-    xy_known=np.column_stack((x_known,y_known)).T
+    for item in data_dict.keys():
+        data[item] = data[item].astype("object")
 
-    xy= create_convex_hull_boundary(xy_known,accuracy_e,accuracy_a)
+    for k in range(len(hypercube)):
+        print(k)
 
-    z_func,coeff=generate_pseudo_func(xy,coeff_all,legendre_orders)
+        coeff = [round(item, decimal_places) for item in hypercube[k]]
+        coeff_all = []
 
-    coeff_fit_GP_rand,coeff_GP1=generate_pseudo_func(xy,coeff_GP_rand,legendre_orders)
-    coeff_fit_known,coeff_known1=generate_pseudo_func(xy,coeff_known,legendre_orders)
+        for i in range(len(coeff)):
+            gaus_mean = random.uniform(gaus_mean_limits[0], gaus_mean_limits[1])
+            gaus_width = random.uniform(gaus_width_limits[0], gaus_width_limits[1])
+            coeff_all.append(coeff[i])
+            coeff_all.append(gaus_mean)
+            coeff_all.append(gaus_width)  
 
-    z_fit,e_fit=GP(xy_known,z_known,e_known,xy,hyperpars)
+        coeff_all = np.array(coeff_all)
 
-    most_common=Counter(x_known).most_common(1)[0][0]
+        xy_known = assign_known_parameters(
+            energy_limits, measured_angle_limits,
+            datapoints_energies_measured, datapoints_angles_measured
+        )
 
-    y_known_temp=[]
-    z_known_temp=[]
-    e_known_temp=[]
-    y_temp=[]
-    y_gp=[]
-    e_gp=[]
-    y_fit=[]
-    y_rand=[]
-    y_func=[]
+        xy = create_convex_hull_boundary(xy_known, accuracy_e, accuracy_a)
+        z_func, coeff_all = generate_pseudo_func(xy, coeff_all, legendre_orders)
+        z_known, e_known, z_func_known = generate_pseudo_data(
+            xy_known, xy, z_func, eff_count_limits
+        )
 
-    for i in range(len(xy_known.T)):
-        if xy_known.T[i][0]==most_common:
-            y_known_temp.append(xy_known.T[i][1])
-            z_known_temp.append(z_known[i])
-            e_known_temp.append(e_known[i])
+        data.at[k, "coefficients"] = coeff_all.tolist()
+        data.at[k, "x_known"] = xy_known[0].tolist()
+        data.at[k, "y_known"] = xy_known[1].tolist()
+        data.at[k, "z_known"] = z_known.tolist()
+        data.at[k, "e_known"] = e_known.tolist()
+        data.at[k, "z_func_known"] = z_func_known.tolist()
+       
+    for item in data.columns:
+        data[item] = data[item].apply(lambda x: json.dumps(x))
 
-    for j in range(len(xy.T)):
-        if xy.T[j][0]==most_common:
-            y_temp.append(xy.T[j][1])
-            y_func.append(z_func[j])
-            y_gp.append(z_fit[j])
-            e_gp.append(e_fit[j])
-            y_rand.append(coeff_fit_GP_rand[j])
-            y_fit.append(coeff_fit_known[j])
-
-
-    plt.errorbar(y_known_temp,z_known_temp,yerr=e_known_temp,fmt="x",alpha=0.7,ecolor="black",color="black")
-    plt.plot(y_temp,y_func,"y",label="Known Function",linestyle='-.')
-    plt.plot(y_temp,y_fit,"r",label="Fit using known datapoints",linestyle='-.')
-    plt.xlabel(r"$\cos\theta$")
-    plt.grid()
-    plt.legend()
-    plt.savefig("./pseudodata_graphs/known_fit.png")
-    plt.close()
-
-    plt.plot(y_temp,y_gp,label="GP")
-    plt.plot(y_temp,y_func,"y",label="Known Function",linestyle='-.')
-    plt.fill_between(y_temp,np.array(y_gp)-np.array(e_gp),np.array(y_gp)+np.array(e_gp),label="Standard Deviation",alpha=0.1)
-    plt.errorbar(y_known_temp,z_known_temp,yerr=e_known_temp,fmt="x",alpha=0.7,ecolor="black",color="black")
-    plt.xlabel(r"$\cos\theta$")
-    plt.grid()
-    plt.legend()
-    plt.savefig("./pseudodata_graphs/gp_fit.png")
-    plt.close()
-
-    plt.errorbar(y_known_temp,z_known_temp,yerr=e_known_temp,fmt="x",alpha=0.7,ecolor="black",color="black")
-    plt.plot(y_temp,y_func,"y",label="Known Function",linestyle='-.')
-    plt.plot(y_temp,y_fit,"r",label="Fit using known datapoints",linestyle='-.')
-    plt.plot(y_temp,y_rand,label="Fit using GP datapoints",linestyle='-.')
-    plt.xlabel(r"$\cos\theta$")
-    plt.grid()
-    plt.legend()
-    plt.savefig("./pseudodata_graphs/both_fit.png")
-    plt.close()
+    data.to_csv("pseudodata_inputs.csv", index=False)
 
     return
 
-#################################################################################################################
-
-def print_std():
-
-    data=pd.read_csv("pseudodata_results.csv")
-
-    print(f"0.67 known: \t{np.mean(data['0.67std_percent_known'].to_numpy())}")
-    print(f"0.67 GP: \t{np.mean(data['0.67std_percent_fit_rand'].to_numpy())}\n")
-
-    print(f"1 known: \t{np.mean(data['1std_percent_known'].to_numpy())}")
-    print(f"1 GP: \t\t{np.mean(data['1std_percent_fit_rand'].to_numpy())}\n")
-
-    print(f"1.96 known: \t{np.mean(data['1.96std_percent_known'].to_numpy())}")
-    print(f"1.96 GP: \t{np.mean(data['1.96std_percent_fit_rand'].to_numpy())}\n")
-
-    return
-
-###########################################################################################################################
+################################################################################################################
 
 energy_limits=[1.2,2]
 angle_limits=[-1,1]
@@ -649,15 +626,10 @@ hypercube_len=100
 legendre_orders=[0,1,2,3]
 accuracy_a=0.01
 accuracy_e=0.01
-r_hat_tol=1.18
-tau_tol=0.15
 
 ##########################################################################################################
 
-#fit_pseudodata()
+#gen_pseudo_data()
 
-#coeff_pull_table()
+fit_pseudodata()
 
-#fit_to_func()
-
-print_std()
