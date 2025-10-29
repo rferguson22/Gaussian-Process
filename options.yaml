@@ -1,8 +1,8 @@
 # Mandatory
-file_name: ["output_folder"]
+file_name: ["Test_file1.txt","Test_folder"]
 resolution: [0.01, 0.01]
-gp_fit: false
-run_prob_surf: true
+gp_fit: true
+run_prob_surf: false
 
 # Optional
 out_file_name: "output_folder/"

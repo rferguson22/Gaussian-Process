@@ -1,9 +1,6 @@
 numpy
 pandas
 smt
-emcee
-corner
 scikit-learn
-matplotlib
 scipy
 PyYAML
