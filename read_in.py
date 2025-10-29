@@ -142,8 +142,7 @@ def read_yaml():
 
     file_entries = options["file_name"]
     resolution = options["resolution"]
-    MC_progress = options.get("MC_progress", False)
-    MC_plotting = options.get("MC_plotting", False)
+    PSO_progress = options.get("PSO_progress", False)
     out_file_name = options.get("out_file_name", None)
     labels = options.get("labels", None)
 
@@ -198,7 +197,7 @@ def read_yaml():
 
     labels = kin_labels + ["quantity", "error"]
 
-    return resolution,MC_progress,MC_plotting,str(out_file_name),labels,data_list,ind_output,group_exp
+    return resolution,PSO_progress,str(out_file_name),labels,data_list,ind_output,group_exp
 
 ##########################################################################################################################
 

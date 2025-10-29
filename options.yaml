@@ -9,7 +9,6 @@ out_file_name: "output_folder/"
 labels: ["Plab", "cosTheta"]
 
 #GP fit optional
-MC_progress: true
-MC_plotting: null
+PSO_progress: true
 write_individual_files: true
 group_experiments_per_file: true

@@ -17,8 +17,7 @@ from read_in import read_yaml
 
 ################################################################################
 
-def process_experiment(x_known, y_known, e_known, resolution, dim_labels, filename, exp_idx, total_exps,\
-                        MC_progress, MC_plotting, labels_out, out_file_name):
+def process_experiment(x_known,y_known,e_known,resolution,dim_labels,filename,exp_idx,total_exps,PSO_progress):
     
     """
     Perform Gaussian Process fitting for a single experiment and return the result as a DataFrame.
@@ -28,7 +27,7 @@ def process_experiment(x_known, y_known, e_known, resolution, dim_labels, filena
         print(f"  Skipping experiment: no valid data points")
         return None
 
-    len_scale = len_scale_opt(x_known, y_known, e_known, MC_progress, MC_plotting, labels_out, out_file_name)
+    len_scale = len_scale_opt(x_known, y_known, e_known, PSO_progress)
     x_fit = fill_convex_hull(x_known.T, resolution)
     y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
 
@@ -116,7 +115,7 @@ def create_GP():
     Main routine to perform GP fitting for all experiments and write output files based on configuration.
     """
 
-    resolution, MC_progress, MC_plotting, out_file_name, labels, data_list, write_ind, group_exps = read_yaml()
+    resolution, PSO_progress, out_file_name, labels, data_list, write_ind, group_exps = read_yaml()
 
     experiment_dfs = []
     num_dims = len(resolution)
@@ -140,8 +139,7 @@ def create_GP():
         for idx, (x_known, (y_known, e_known)) in enumerate(zip(x_known_list, exp_pairs), start=1):
             print(f"Processing experiment {idx}/{total_experiments} from file {file_idx}/{len(data_list)}: {filename}")
 
-            df = process_experiment(x_known, y_known, e_known, resolution, dim_labels, filename, idx, total_experiments,\
-                                     MC_progress, MC_plotting, labels_out, out_file_name)
+            df = process_experiment(x_known, y_known, e_known, resolution, dim_labels, filename, idx, total_experiments,PSO_progress)
             if df is None:
                 continue
 

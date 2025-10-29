@@ -20,9 +20,7 @@ from GP_func import GP
 
 ###################################################################################################
 
-def len_scale_opt(x_known, y_known, e_known, MC_progress=False, MC_plotting=False,
-                    labels=None, out_file_name="output.txt",
-                    num_particles=30, max_iters=300, patience=40, refine=True):
+def len_scale_opt(x_known, y_known, e_known, PSO_progress):
     
 
     max_points = 100
@@ -120,11 +118,11 @@ def len_scale_opt(x_known, y_known, e_known, MC_progress=False, MC_plotting=Fals
             else:
                 no_improve_counter += 1
 
-            if MC_progress and i % 20 == 0:
+            if PSO_progress and i % 20 == 0:
                 print(f"Iter {i}: Best Score = {global_best_score:.6f}, No Improve = {no_improve_counter}")
 
             if no_improve_counter >= patience:
-                if MC_progress:
+                if PSO_progress:
                     print(f"Stagnation at iter {i}, soft-restarting swarm...")
 
                 noise = 0.1 * (upper_bounds - lower_bounds)

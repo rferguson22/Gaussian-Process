@@ -1,7 +1,7 @@
 
-# Gaussian Process with MCMC Length Scale Optimisation
+# Gaussian Process with PSO Length Scale Optimisation
 
-This Python script generates a **Gaussian Process (GP)** using **Markov Chain Monte Carlo (MCMC)** to optimise the length scale from a novel loss function.  
+This Python script generates a **Gaussian Process (GP)** using **Particle Swarm Optimisation (PSO)** to optimise the length scale from a novel loss function.  
 See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse Data*](https://arxiv.org/abs/2505.01473).
 
 ---
@@ -33,8 +33,7 @@ Regardless of this setting, the following format rules apply to **all files**:
 |---------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
 | `gp_fit`                  | Boolean | If `true`, run Gaussian Process fitting. If `false`, assume input files are precomputed GP results.                                                     | `True`              |
 | `gen_prob_surf`           | Boolean | If `true`, compute and output a probability surface from merged GP results.                                                                              | `False`             |
-| `MC_progress`             | Boolean | Whether to display the MCMC progress.                                                                                                                    | `False`             |
-| `MC_plotting`             | Boolean | Whether to plot and save MCMC corner plots, KDE peaks, and silhouette scores.                                                                            | `False`             |
+| `PSO_progress`             | Boolean | Whether to display the PSO progress.                                                                                                                    | `False`             |         |
 | `out_file_name`           | String  | For combined mode: output file path or folder. For individual mode: treated as a folder path.                                                            | `"GP_results.txt"`  |
 | `labels`                  | List    | Labels for kinematic dimension columns. See **Output Labels** section.                                                                                   | Auto or generic     |
 | `write_individual_files`  | Boolean | If `true`, writes one output file per input file (or per experiment if not grouped). Otherwise, writes a single combined output.                        | `False`             |
