@@ -2,7 +2,6 @@
 # Gaussian Process with PSO Length Scale Optimisation
 
 This Python script generates a **Gaussian Process (GP)** using **Particle Swarm Optimisation (PSO)** to optimise the length scale from a novel loss function.  
-See the accompanying paper: [*Data‑driven Approach for Interpolation of Sparse Data*](https://arxiv.org/abs/2505.01473).
 
 ---
 ## Input Data Assumptions
@@ -95,22 +94,3 @@ Labels for columns inside the output file(s) are constructed as follows:
 
 ---
 
-## Citation
-
-If you use this code, please cite:
-
-> **R.F. Ferguson, D.G. Ireland & B. McKinnon**,  
-> *Data‑driven Approach for Interpolation of Sparse Data*,  
-> arXiv:2505.01473 (2025).
-
-```bibtex
-@misc{GP_sparse,
-      title={Data-driven Approach for Interpolation of Sparse Data}, 
-      author={R. F. Ferguson and D. G. Ireland and B. McKinnon},
-      year={2025},
-      eprint={2505.01473},
-      archivePrefix={arXiv},
-      primaryClass={physics.data-an},
-      url={https://arxiv.org/abs/2505.01473}, 
-}
-```
