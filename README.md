@@ -1,1 +1,1 @@
-This branch is only used to make the pseudodata testing code and results, as shown in our paper, accessible. Please use the master branch for running your own GP fits. 
+This branch is only used to make the pseudodata testing code and results accessible. Please use the master branch for running your own GP fits. 

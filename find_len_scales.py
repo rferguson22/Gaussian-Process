@@ -13,7 +13,6 @@ import multiprocessing
 from sklearn.cluster import KMeans
 from pathlib import Path
 
-from scipy.stats import ks_2samp
 from scipy.stats import norm
 
 from GP_func import GP
@@ -27,25 +26,22 @@ def len_scale_opt(x_known, y_known, e_known, PSO_progress):
     if x_known.shape[1] > max_points:
         print(f"Dataset too large ({x_known.shape[1]} points). Subsampling to {max_points} for hyperparameter optimisation.")
 
-        # Fit KMeans on the data (transpose: (dims, points) → (points, dims))
         X = x_known.T
         kmeans = KMeans(n_clusters=max_points, n_init='auto', random_state=0)
         labels = kmeans.fit_predict(X)
         centers = kmeans.cluster_centers_
 
-        # Pick closest actual point to each cluster center
         idx = []
         for k in range(max_points):
             members = np.where(labels == k)[0]
             if len(members) == 0:
-                continue  # skip empty clusters (rare)
+                continue
             d2 = np.sum((X[members] - centers[k])**2, axis=1)
             closest = members[np.argmin(d2)]
             idx.append(closest)
 
         idx = np.array(idx)
 
-        # Apply the chosen indices
         x_known = x_known[:, idx]
         y_known = y_known[idx]
         e_known = e_known[idx]
@@ -58,8 +54,12 @@ def len_scale_opt(x_known, y_known, e_known, PSO_progress):
     restart_count = 0
 
     ranges = np.max(x_known, axis=1) - np.min(x_known, axis=1)
-    lower_bounds = 0.01 * ranges / x_known.shape[1]  
+    x_sorted_unique = [np.unique(row) for row in x_known]
+    diffs = [np.diff(row) for row in x_sorted_unique]
+
+    lower_bounds = np.array([np.min(d[d > 0]) if np.any(d > 0) else 0 for d in diffs])
     upper_bounds = ranges
+
     bounds_array = np.column_stack((lower_bounds, upper_bounds))
     v_max = 1.0 * (upper_bounds - lower_bounds) 
 
@@ -73,7 +73,6 @@ def len_scale_opt(x_known, y_known, e_known, PSO_progress):
     num_cores = max(1, os.cpu_count() // 4)
     ctx = multiprocessing.get_context('fork')
     with ctx.Pool(processes=num_cores) as executor:
-        # Evaluate initial personal bests once
         args_iterable = [(p, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds) for p in positions]
         personal_best_scores = list(executor.map(evaluate_loss_helper, args_iterable))
         personal_best_scores = np.array(personal_best_scores)
@@ -154,7 +153,7 @@ def len_scale_opt(x_known, y_known, e_known, PSO_progress):
 
 ########################################################################################################
 
-def ks_loss(ls, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
+def wass_loss(ls, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds, upper_bounds):
 
     if np.any(ls <= lower_bounds) or np.any(ls >= upper_bounds):
         return -1e13
@@ -165,15 +164,24 @@ def ks_loss(ls, x_known, y_known, e_known, sigma_vals, expected_percents, lower_
     pulls = (y_fit[:, None] - y_known[:, None]) / np.maximum(scaled_e, 1e-12)
     measured_percents = np.mean(np.abs(pulls) <= 1, axis=0)
     
-    D, _ = ks_2samp(expected_percents, measured_percents)
-    sigma_loss = np.mean(np.abs(measured_percents - expected_percents))
+    diff = np.abs(measured_percents - expected_percents)
+    wasserstein = np.trapz(diff, sigma_vals) 
+
+    range_span = upper_bounds - lower_bounds
+    norm_d_lower = (ls - lower_bounds) / range_span
+    norm_d_upper = (upper_bounds - ls) / range_span
+
+    d_i = np.minimum(norm_d_lower, norm_d_upper)
+    d_min = min(d_i)
+
+    proximity = np.clip(1 - 2 * d_min, 0.0, 1.0)
     
-    return -D - (0.01 * sigma_loss)
+    return -wasserstein - (0.01*proximity)
 
 #####################################################################################################
 
 def evaluate_loss(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds):
-    return -ks_loss(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds)
+    return -wass_loss(lengths, x_known, y_known, e_known, sigma_vals, expected_percents, lower_bounds,upper_bounds)
 
 #################################################################################################################
 
