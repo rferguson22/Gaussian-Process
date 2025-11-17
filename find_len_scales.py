@@ -54,8 +54,12 @@ def len_scale_opt(x_known, y_known, e_known, PSO_progress):
     restart_count = 0
 
     ranges = np.max(x_known, axis=1) - np.min(x_known, axis=1)
-    lower_bounds = 0.01 * ranges / x_known.shape[1]  
+    x_sorted_unique = [np.unique(row) for row in x_known]
+    diffs = [np.diff(row) for row in x_sorted_unique]
+
+    lower_bounds = np.array([np.min(d[d > 0]) if np.any(d > 0) else 0 for d in diffs])
     upper_bounds = ranges
+    
     bounds_array = np.column_stack((lower_bounds, upper_bounds))
     v_max = 1.0 * (upper_bounds - lower_bounds) 
 
