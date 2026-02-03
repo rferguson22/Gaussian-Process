@@ -1,6 +1,6 @@
 # Mandatory
 file_name: ["Test_file1.txt","Test_folder"]
-resolution: [0.01, 0.01]
+resolution: [0.01,0.01]
 gp_fit: true
 run_prob_surf: false
 

@@ -7,6 +7,7 @@ os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from functools import reduce
 
@@ -24,11 +25,17 @@ def process_experiment(x_known,y_known,e_known,resolution,dim_labels,filename,ex
     """
 
     if x_known.shape[1] == 0:
-        print(f"  Skipping experiment: no valid data points")
+        print(f"Skipping experiment: no valid data points")
         return None
 
     len_scale = len_scale_opt(x_known, y_known, e_known, PSO_progress)
-    x_fit = fill_convex_hull(x_known.T, resolution)
+
+    if len(resolution)==1:
+        x_fit = np.arange(np.min(x_known),np.max(x_known)+resolution[0],resolution[0])
+        x_fit=x_fit.reshape(len(x_fit),1)
+    else:
+        x_fit = fill_convex_hull(x_known.T, resolution)
+
     y_fit, e_fit = GP(x_known, y_known, e_known, x_fit.T, len_scale)
 
     df = pd.DataFrame(x_fit, columns=dim_labels)
